@@ -43,6 +43,10 @@ demais CRUDs ainda não foram implementados.
 - [ ] CRUD de pagamentos — **não implementado**
 - [ ] Tela de ajuste manual de estoque — **não implementado**
 - [ ] Dashboard com dados reais — **não implementado** (hoje são placeholders "—")
+ - [x] CRUD de pagamentos — funcional (rotas: `app/api/pagamentos/*`; componentes: `components/pagamentos/*`; páginas: `app/pagamentos/*`).
+  - Observações: a listagem exibe `data_vencimento` e usa rótulos amigáveis para `forma`/`status`.
+ - [ ] Tela de ajuste manual de estoque — **não implementado**
+ - [ ] Dashboard com dados reais — **não implementado** (hoje são placeholders "—")
 - [x] Autenticação — **email+password** (decisão tomada)
 
 **Ordem sugerida de implementação:** produtos → clientes → vendas → pagamentos
