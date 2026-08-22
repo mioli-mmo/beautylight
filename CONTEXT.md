@@ -18,7 +18,8 @@ escopo enxuto. Uso por **um único usuário** (o próprio vendedor).
 
 ## ESTADO ATUAL
 
-Apenas a **fundação** foi criada. Nenhum CRUD funcional ainda.
+Apenas a **fundação** foi criada. CRUD de produtos já está funcional; os
+demais CRUDs ainda não foram implementados.
 
 - [x] Schema completo do banco (`supabase/schema.sql`), já aplicado no
       Supabase do usuário
@@ -33,7 +34,7 @@ Apenas a **fundação** foi criada. Nenhum CRUD funcional ainda.
       `/clientes`, `/vendas`, `/pagamentos` — apenas layout/placeholder,
       **sem** busca de dados, sem formulários funcionais, sem mutações
 - [x] Layout base: Sidebar (desktop) + BottomNav (mobile), mobile-first
-- [ ] CRUD de produtos — **não implementado**
+- [x] CRUD de produtos — funcional
 - [ ] CRUD de clientes — **não implementado**
 - [ ] CRUD de vendas (com itens) — **não implementado**
 - [ ] CRUD de pagamentos — **não implementado**
