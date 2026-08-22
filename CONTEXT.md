@@ -37,7 +37,9 @@ demais CRUDs ainda não foram implementados.
 - [x] Layout base: Sidebar (desktop) + BottomNav (mobile), mobile-first
 - [x] CRUD de produtos — funcional
 - [x] CRUD de clientes — funcional (rotas: `app/api/clientes/*`; componentes: `components/clients/*`; página: `app/clientes/page.tsx`)
-- [ ] CRUD de vendas (com itens) — **não implementado**
+- [x] CRUD de vendas (com itens) — funcional (rotas: `app/api/vendas/*`; componentes: `components/vendas/*`; páginas: `app/vendas/*`).
+  - Observações: edição de venda abre `/vendas/[id]` e ao salvar redireciona para `/vendas`.
+  - Campos numéricos no formulário aceitam vírgula ou ponto como separador decimal.
 - [ ] CRUD de pagamentos — **não implementado**
 - [ ] Tela de ajuste manual de estoque — **não implementado**
 - [ ] Dashboard com dados reais — **não implementado** (hoje são placeholders "—")
