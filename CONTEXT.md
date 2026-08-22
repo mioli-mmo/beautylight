@@ -14,6 +14,7 @@ escopo enxuto. Uso por **um único usuário** (o próprio vendedor).
 
 - **Frontend:** Next.js (App Router) + TypeScript + Tailwind CSS
 - **Backend/DB:** Supabase (Postgres + Auth + RLS)
+ - **Backend/DB:** Supabase (Postgres + Auth) — RLS desativado (decisão do usuário)
 - **Deploy:** Vercel (frontend) + Supabase (infra de dados)
 
 ## ESTADO ATUAL
@@ -35,7 +36,7 @@ demais CRUDs ainda não foram implementados.
       **sem** busca de dados, sem formulários funcionais, sem mutações
 - [x] Layout base: Sidebar (desktop) + BottomNav (mobile), mobile-first
 - [x] CRUD de produtos — funcional
-- [ ] CRUD de clientes — **não implementado**
+- [x] CRUD de clientes — funcional (rotas: `app/api/clientes/*`; componentes: `components/clients/*`; página: `app/clientes/page.tsx`)
 - [ ] CRUD de vendas (com itens) — **não implementado**
 - [ ] CRUD de pagamentos — **não implementado**
 - [ ] Tela de ajuste manual de estoque — **não implementado**
@@ -72,7 +73,7 @@ Schema completo e comentado em `supabase/schema.sql`
 | Decisão | Motivo |
 |---|---|
 | Next.js + Vercel + Supabase | Pedido no briefing original; combinação simples de manter |
-| UUID + RLS por `owner_id` em todas as tabelas | Padrão recomendado pelo Supabase; não custa manter mesmo com 1 usuário só |
+| UUID + owner_id em todas as tabelas | Mantido; RLS está desativado por decisão do usuário (único usuário) |
 | `NUMERIC(10,2)` para valores monetários | Evita erro de arredondamento de float |
 | Estoque baixa **automaticamente** ao registrar venda (via trigger em `venda_itens`), **e também** permite ajuste manual (inserindo em `estoque_movimentos`) | Decisão explícita do usuário |
 | Autenticação: email + password | Decisão: fluxo mais simples com Supabase Auth (email/senha, um usuário) |
@@ -99,3 +100,4 @@ Schema completo e comentado em `supabase/schema.sql`
   produtos com estoque baixo, resumo de vendas do mês — necessárias para o
   dashboard
 - Sem seed de dados de desenvolvimento
+- Testes manuais para o CRUD de clientes — pendente (RLS desativado)
