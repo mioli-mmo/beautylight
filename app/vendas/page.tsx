@@ -47,7 +47,6 @@ export default async function VendasPage() {
           <div>
             <div className="rounded border p-4">
               <h3 className="mb-4 text-lg font-medium">Nova venda</h3>
-              {/* @ts-expect-error Server component -> client component */}
               <VendaForm />
             </div>
           </div>

@@ -16,7 +16,6 @@ export default async function VendaEditPage({ params }: { params: { id: string }
       <PageHeader title="Editar venda" />
       <div className="p-4 md:p-8">
         <div className="rounded border p-4">
-          {/* @ts-expect-error Server -> Client */}
           <VendaForm venda={data} />
         </div>
       </div>

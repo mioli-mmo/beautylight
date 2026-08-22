@@ -8,7 +8,7 @@ import type { Database } from "@/types/database.types";
 export async function createClient() {
   const cookieStore = await cookies();
 
-  return createServerClient<Database>(
+  return createServerClient<any>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -16,7 +16,7 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) {
           // TODO: em Server Components isso pode falhar silenciosamente
           // (esperado) — só funciona de fato em Server Actions/Route Handlers
           // ou com middleware de refresh de sessão.

@@ -98,21 +98,43 @@ export interface Pagamento {
   updated_at: string;
 }
 
-// ----------------------------------------------------------------------------
-// Formato "Database" no padrão esperado pelo cliente supabase-js tipado.
-// TODO: preencher Insert/Update de cada tabela conforme as telas forem
-// implementadas (por ora, Row é suficiente para os esqueletos de front-end).
-// ----------------------------------------------------------------------------
+export interface EstoqueMovimento {
+  id: string;
+  owner_id: string;
+  produto_id: string;
+  tipo: "venda" | "ajuste_manual" | "entrada";
+  quantidade: number;
+  venda_item_id: string | null;
+  observacao: string | null;
+  created_at: string;
+}
+
+export type CategoriaInsert = Partial<Omit<Categoria, "id" | "owner_id" | "created_at">>;
+export type ProdutoInsert = Partial<Omit<Produto, "id" | "owner_id" | "created_at" | "updated_at">>;
+export type ClienteInsert = Partial<Omit<Cliente, "id" | "owner_id" | "created_at" | "updated_at">>;
+export type VendaInsert = Partial<Omit<Venda, "id" | "owner_id" | "created_at" | "updated_at">>;
+export type VendaItemInsert = Partial<Omit<VendaItem, "id" | "owner_id" | "created_at">>;
+export type PagamentoInsert = Partial<Omit<Pagamento, "id" | "owner_id" | "created_at" | "updated_at">>;
+export type EstoqueMovimentoInsert = Partial<Omit<EstoqueMovimento, "id" | "owner_id" | "created_at">>;
+
+export type CategoriaUpdate = Partial<Omit<Categoria, "id" | "owner_id" | "created_at">>;
+export type ProdutoUpdate = Partial<Omit<Produto, "id" | "owner_id" | "created_at" | "updated_at">>;
+export type ClienteUpdate = Partial<Omit<Cliente, "id" | "owner_id" | "created_at" | "updated_at">>;
+export type VendaUpdate = Partial<Omit<Venda, "id" | "owner_id" | "created_at" | "updated_at">>;
+export type VendaItemUpdate = Partial<Omit<VendaItem, "id" | "owner_id" | "created_at">>;
+export type PagamentoUpdate = Partial<Omit<Pagamento, "id" | "owner_id" | "created_at" | "updated_at">>;
+export type EstoqueMovimentoUpdate = Partial<Omit<EstoqueMovimento, "id" | "owner_id" | "created_at">>;
 
 export interface Database {
   public: {
     Tables: {
-      categorias: { Row: Categoria };
-      produtos: { Row: Produto };
-      clientes: { Row: Cliente };
-      vendas: { Row: Venda };
-      venda_itens: { Row: VendaItem };
-      pagamentos: { Row: Pagamento };
+      categorias: { Row: Categoria; Insert: CategoriaInsert; Update: CategoriaUpdate };
+      produtos: { Row: Produto; Insert: ProdutoInsert; Update: ProdutoUpdate };
+      clientes: { Row: Cliente; Insert: ClienteInsert; Update: ClienteUpdate };
+      vendas: { Row: Venda; Insert: VendaInsert; Update: VendaUpdate };
+      venda_itens: { Row: VendaItem; Insert: VendaItemInsert; Update: VendaItemUpdate };
+      pagamentos: { Row: Pagamento; Insert: PagamentoInsert; Update: PagamentoUpdate };
+      estoque_movimentos: { Row: EstoqueMovimento; Insert: EstoqueMovimentoInsert; Update: EstoqueMovimentoUpdate };
     };
   };
 }

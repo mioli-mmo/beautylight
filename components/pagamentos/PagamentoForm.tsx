@@ -33,10 +33,10 @@ export function PagamentoForm({ pagamento }: { pagamento?: any }) {
     }
   }, [pagamento]);
 
-  function parseDecimal(value: string) {
+  const parseDecimal = (value: string) => {
     if (value === null || value === undefined || value === "") return 0;
     return Number(String(value).replace(",", ".")) || 0;
-  }
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -168,9 +168,4 @@ export function PagamentoForm({ pagamento }: { pagamento?: any }) {
       </div>
     </form>
   );
-
-  function parseDecimal(value: string) {
-    if (value === null || value === undefined || value === "") return 0;
-    return Number(String(value).replace(",", ".")) || 0;
-  }
 }

@@ -62,7 +62,6 @@ export default async function PagamentosPage() {
 
                     <div className="mt-3 flex items-center justify-between">
                       <div className="text-sm text-ink/60">Parcelas: {p.parcelas ?? 1}</div>
-                      {/* @ts-ignore */}
                       <PagamentoActions id={p.id} />
                     </div>
                   </div>
@@ -74,7 +73,6 @@ export default async function PagamentosPage() {
           <div>
             <div className="rounded border p-4">
               <h3 className="mb-4 text-lg font-medium">Registrar pagamento</h3>
-              {/* @ts-expect-error Server component -> client component */}
               <PagamentoForm />
             </div>
           </div>

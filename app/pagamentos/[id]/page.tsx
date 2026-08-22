@@ -12,7 +12,6 @@ export default async function PagamentoEditPage({ params }: { params: { id: stri
       <PageHeader title="Editar pagamento" />
       <div className="p-4 md:p-8">
         <div className="rounded border p-4">
-          {/* @ts-expect-error Server -> Client */}
           <PagamentoForm pagamento={data} />
         </div>
       </div>

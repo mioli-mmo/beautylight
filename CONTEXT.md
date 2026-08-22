@@ -40,17 +40,19 @@ demais CRUDs ainda não foram implementados.
 - [x] CRUD de vendas (com itens) — funcional (rotas: `app/api/vendas/*`; componentes: `components/vendas/*`; páginas: `app/vendas/*`).
   - Observações: edição de venda abre `/vendas/[id]` e ao salvar redireciona para `/vendas`.
   - Campos numéricos no formulário aceitam vírgula ou ponto como separador decimal.
-- [ ] CRUD de pagamentos — **não implementado**
-- [ ] Tela de ajuste manual de estoque — **não implementado**
-- [ ] Dashboard com dados reais — **não implementado** (hoje são placeholders "—")
- - [x] CRUD de pagamentos — funcional (rotas: `app/api/pagamentos/*`; componentes: `components/pagamentos/*`; páginas: `app/pagamentos/*`).
+- [x] CRUD de pagamentos — funcional (rotas: `app/api/pagamentos/*`; componentes: `components/pagamentos/*`; páginas: `app/pagamentos/*`).
   - Observações: a listagem exibe `data_vencimento` e usa rótulos amigáveis para `forma`/`status`.
- - [ ] Tela de ajuste manual de estoque — **não implementado**
- - [ ] Dashboard com dados reais — **não implementado** (hoje são placeholders "—")
+- [x] Tela de ajuste manual de estoque — funcional (rotas: `app/api/estoque/*`; componentes: `components/estoque/*`; página: `app/estoque/page.tsx`).
+  - Observações: o formulário usa quantidade livre, com botões de acréscimo e diminuição; o movimento é registrado como `ajuste_manual` e atualiza `produtos.estoque_atual` via trigger.
+- [ ] Dashboard com dados reais — **não implementado** (hoje são placeholders "—")
 - [x] Autenticação — **email+password** (decisão tomada)
 
 **Ordem sugerida de implementação:** produtos → clientes → vendas → pagamentos
 → ajuste manual de estoque → dashboard.
+
+**Status atual da implementação:** produtos, clientes, vendas, pagamentos e
+ajuste manual de estoque já estão funcionalmente implementados no app;
+resta apenas o dashboard com dados reais.
 
 ## MODELO DE DADOS (resumo)
 
@@ -65,7 +67,9 @@ Tabelas: `produtos`, `clientes`, `vendas`, `venda_itens`, `pagamentos`,
 - `estoque_movimentos`: histórico de toda alteração de estoque (`tipo`:
   `venda` | `ajuste_manual` | `entrada`). Trigger em `venda_itens`
   (insert/delete) gera movimentos automaticamente; ajustes manuais são
-  inseridos diretamente nessa tabela pelo front-end
+  inseridos diretamente nessa tabela pelo front-end e atualizam o saldo de
+  `produtos.estoque_atual` por trigger. O ajuste manual usa quantidade livre,
+  com sinal positivo para acréscimo e negativo para diminuição.
 - Enums: `marca_produto`, `status_venda`, `forma_pagamento` (fiado,
   dinheiro, pix, debito, credito_vista, credito_parcelado),
   `status_pagamento`, `tipo_movimento_estoque`

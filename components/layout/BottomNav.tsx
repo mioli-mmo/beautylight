@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/vendas", label: "Vendas" },
   { href: "/clientes", label: "Clientes" },
   { href: "/pagamentos", label: "Pagtos" },
+  { href: "/estoque", label: "Estq" },
 ];
 
 export function BottomNav() {

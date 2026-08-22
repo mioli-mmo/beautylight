@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/clientes", label: "Clientes" },
   { href: "/vendas", label: "Vendas" },
   { href: "/pagamentos", label: "Pagamentos" },
+  { href: "/estoque", label: "Estoque" },
 ];
 
 export function Sidebar() {
