@@ -44,6 +44,8 @@ create type forma_pagamento as enum (
 
 create type status_pagamento as enum ('pendente', 'pago', 'cancelado');
 
+create type status_boleto as enum ('aberto', 'parcial', 'pago', 'vencido', 'cancelado');
+
 -- ============================================================================
 -- FUNÇÃO utilitária: atualizar updated_at automaticamente
 -- ============================================================================
@@ -226,6 +228,99 @@ create trigger trg_pagamentos_updated_at
   for each row execute function set_updated_at();
 
 -- ============================================================================
+-- TABELA: pagamento_parcelas
+-- (parcelas individuais para pagamentos de clientes)
+-- ============================================================================
+
+create table pagamento_parcelas (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+
+  pagamento_id uuid not null references pagamentos(id) on delete cascade,
+  numero integer not null check (numero >= 1),
+  valor numeric(10,2) not null check (valor > 0),
+  data_vencimento date,
+  data_pagamento timestamptz,
+  status status_pagamento not null default 'pendente',
+
+  created_at timestamptz not null default now()
+);
+
+create index idx_pagamento_parcelas_owner on pagamento_parcelas(owner_id);
+create index idx_pagamento_parcelas_pagamento on pagamento_parcelas(pagamento_id);
+create index idx_pagamento_parcelas_status on pagamento_parcelas(status);
+
+create trigger trg_pagamento_parcelas_updated_at
+  before update on pagamento_parcelas
+  for each row execute function set_updated_at();
+
+
+-- ============================================================================
+-- TABELA: boletos
+-- (compras para reposicao de estoque, com controle financeiro)
+-- ============================================================================
+
+create table boletos (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+
+  fornecedor text not null,
+  descricao text,
+
+  linha_digitavel text,
+  codigo_barras text,
+
+  data_emissao date not null default current_date,
+  data_vencimento date not null,
+  data_pagamento timestamptz,
+
+  valor_total numeric(10,2) not null check (valor_total > 0),
+  valor_pago numeric(10,2) not null default 0 check (valor_pago >= 0),
+
+  status status_boleto not null default 'aberto',
+  observacoes text,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  check (valor_pago <= valor_total)
+);
+
+create index idx_boletos_owner on boletos(owner_id);
+create index idx_boletos_status on boletos(status);
+create index idx_boletos_vencimento on boletos(data_vencimento);
+create index idx_boletos_fornecedor on boletos using gin (to_tsvector('portuguese', fornecedor));
+
+create trigger trg_boletos_updated_at
+  before update on boletos
+  for each row execute function set_updated_at();
+
+-- ============================================================================
+-- TABELA: boleto_itens
+-- (itens comprados no boleto; pode alimentar estoque quando pago)
+-- ============================================================================
+
+create table boleto_itens (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+
+  boleto_id uuid not null references boletos(id) on delete cascade,
+  produto_id uuid references produtos(id) on delete set null,
+
+  produto_nome text not null,
+  quantidade integer not null check (quantidade > 0),
+  custo_unitario numeric(10,2) not null check (custo_unitario >= 0),
+  subtotal numeric(10,2) generated always as (quantidade * custo_unitario) stored,
+
+  aplica_estoque boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index idx_boleto_itens_owner on boleto_itens(owner_id);
+create index idx_boleto_itens_boleto on boleto_itens(boleto_id);
+create index idx_boleto_itens_produto on boleto_itens(produto_id);
+
+-- ============================================================================
 -- TABELA: estoque_movimentos
 -- Histórico de toda alteração de estoque — seja automática (gerada por uma
 -- venda) ou manual (ajuste feito diretamente pelo vendedor: perda, quebra,
@@ -249,6 +344,9 @@ create table estoque_movimentos (
   -- permite rastrear a origem e reverter corretamente se o item for excluído
   venda_item_id uuid references venda_itens(id) on delete set null,
 
+  -- preenchido quando o movimento de entrada veio de item de boleto
+  boleto_item_id uuid references boleto_itens(id) on delete set null,
+
   observacao text,
 
   created_at timestamptz not null default now()
@@ -257,6 +355,7 @@ create table estoque_movimentos (
 create index idx_estoque_movimentos_owner on estoque_movimentos(owner_id);
 create index idx_estoque_movimentos_produto on estoque_movimentos(produto_id);
 create index idx_estoque_movimentos_venda_item on estoque_movimentos(venda_item_id);
+create index idx_estoque_movimentos_boleto_item on estoque_movimentos(boleto_item_id);
 
 -- ----------------------------------------------------------------------------
 -- Baixa automática de estoque ao registrar/editar/excluir um item de venda.
@@ -314,6 +413,75 @@ create trigger trg_venda_itens_estorna_estoque
   after delete on venda_itens
   for each row execute function venda_item_estorna_estoque();
 
+-- Quando um item de boleto e criado em um boleto ja pago, gera entrada
+-- automatica no estoque.
+create or replace function boleto_item_entrada_estoque_se_pago()
+returns trigger as $$
+begin
+  if new.aplica_estoque
+     and new.produto_id is not null
+     and exists (
+       select 1
+       from boletos b
+       where b.id = new.boleto_id
+         and b.status = 'pago'
+     ) then
+    insert into estoque_movimentos (
+      owner_id, produto_id, tipo, quantidade, boleto_item_id, observacao
+    )
+    values (
+      new.owner_id,
+      new.produto_id,
+      'entrada',
+      new.quantidade,
+      new.id,
+      'entrada automatica por item de boleto'
+    );
+  end if;
+
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger trg_boleto_itens_entrada_estoque
+  after insert on boleto_itens
+  for each row execute function boleto_item_entrada_estoque_se_pago();
+
+-- Quando boleto muda para pago, aplica entrada para itens ainda nao
+-- contabilizados no estoque.
+create or replace function boleto_pago_aplica_entradas_estoque()
+returns trigger as $$
+begin
+  if old.status <> 'pago' and new.status = 'pago' then
+    insert into estoque_movimentos (
+      owner_id, produto_id, tipo, quantidade, boleto_item_id, observacao
+    )
+    select
+      bi.owner_id,
+      bi.produto_id,
+      'entrada',
+      bi.quantidade,
+      bi.id,
+      'entrada automatica por quitacao de boleto'
+    from boleto_itens bi
+    where bi.boleto_id = new.id
+      and bi.aplica_estoque
+      and bi.produto_id is not null
+      and not exists (
+        select 1
+        from estoque_movimentos em
+        where em.boleto_item_id = bi.id
+      );
+  end if;
+
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger trg_boletos_pago_aplica_estoque
+  after update of status on boletos
+  for each row execute function boleto_pago_aplica_entradas_estoque();
+
 -- Nota: se quiser permitir EDITAR a quantidade de um item de venda já
 -- lançado, adicionar um trigger AFTER UPDATE que gere um movimento com o
 -- delta (nova quantidade - quantidade antiga). Deixado de fora por ora
@@ -333,7 +501,10 @@ alter table clientes     enable row level security;
 alter table vendas       enable row level security;
 alter table venda_itens  enable row level security;
 alter table pagamentos   enable row level security;
+alter table boletos      enable row level security;
+alter table boleto_itens enable row level security;
 alter table estoque_movimentos enable row level security;
+alter table pagamento_parcelas enable row level security;
 
 -- Política genérica reaplicada por tabela: dono só mexe no que é seu.
 create policy "categorias_owner_all" on categorias
@@ -354,7 +525,16 @@ create policy "venda_itens_owner_all" on venda_itens
 create policy "pagamentos_owner_all" on pagamentos
   for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
+create policy "boletos_owner_all" on boletos
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+create policy "boleto_itens_owner_all" on boleto_itens
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
 create policy "estoque_movimentos_owner_all" on estoque_movimentos
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+create policy "pagamento_parcelas_owner_all" on pagamento_parcelas
   for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- ============================================================================
