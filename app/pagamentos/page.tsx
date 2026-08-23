@@ -34,7 +34,11 @@ function formatStatus(s: any) {
 
 function parseDate(value: string | null) {
   if (!value) return null;
-  const date = new Date(value);
+  const dateStr =
+    typeof value === "string" && value.length === 10 && !value.includes("T")
+      ? `${value}T00:00:00`
+      : value;
+  const date = new Date(dateStr);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -55,25 +59,44 @@ function isWithinNext30Days(value: string | null) {
   const dueDate = parseDate(value);
   if (!dueDate) return false;
   const today = new Date();
-  const futureLimit = new Date();
+  today.setHours(0, 0, 0, 0);
+  const futureLimit = new Date(today);
   futureLimit.setDate(today.getDate() + 30);
+  futureLimit.setHours(23, 59, 59, 999);
   return dueDate >= today && dueDate <= futureLimit;
 }
 
-function buildWhatsappLink(phone: string | null, payment: any) {
+function buildWhatsappLink(
+  phone: string | null,
+  payment: any,
+  customValor?: number,
+  customVencimento?: string | null
+) {
   if (!phone) return "#";
   const digits = phone.replace(/\D/g, "");
   if (!digits) return "#";
-  const message = `Olá, ${payment.cliente?.nome ?? "tudo bem"}! Tudo bem? ✨
+  const valor = customValor ?? Number(payment.valor ?? 0);
+  const vencimento = customVencimento !== undefined ? customVencimento : payment.data_vencimento;
+
+  // Geração dinâmica dos emojis por CodePoint para ignorar limitações de encoding do arquivo
+  const sparkle = String.fromCodePoint(0x2728);
+  const money = String.fromCodePoint(0x1f4b0);
+  const calendar = String.fromCodePoint(0x1f4c5);
+  const lipstick = String.fromCodePoint(0x1f484);
+  const nails = String.fromCodePoint(0x1f485);
+
+  const message = `Olá, ${payment.cliente?.nome ?? "tudo bem"}! Tudo bem? ${sparkle}
 
 Esta é uma mensagem automática da BL passando para lembrar do seu pagamento pendente:
 
-💰 Valor: ${formatMoney(Number(payment.valor ?? 0))}
+${money} Valor: ${formatMoney(valor)}
 
-📅 Vencimento: ${formatDateBR(payment.data_vencimento)}
+${calendar} Vencimento: ${formatDateBR(vencimento)}
 
-Qualquer dúvida ou se já tiver realizado o pagamento, é só nos avisar por aqui. Muito obrigada pelo carinho e preferência! 💄💅`;
-  return `https://wa.me/55${digits}?text=${encodeURIComponent(message)}`;
+Qualquer dúvida ou se já tiver realizado o pagamento, é só nos avisar por aqui. Muito obrigada pelo carinho e preferência! ${lipstick}${nails}`;
+
+  // Utiliza a API direta do WhatsApp para evitar quebras de codificação no redirecionamento do wa.me
+  return `https://api.whatsapp.com/send?phone=55${digits}&text=${encodeURIComponent(message)}`;
 }
 
 function buildStatusHref(
@@ -88,6 +111,34 @@ function buildStatusHref(
   if (filters.fim) params.set("data_fim", filters.fim);
   const query = params.toString();
   return query ? `/pagamentos?${query}` : "/pagamentos";
+}
+
+function getPaymentEffectivePendingInfo(p: any) {
+  const numParcelas = Number(p.parcelas) || 1;
+  const parcelasArray = Array.isArray(p.pagamento_parcelas) ? p.pagamento_parcelas : [];
+
+  const pendingParcelas = parcelasArray
+    .filter((par: any) => par.status === "pendente")
+    .sort((a: any, b: any) => {
+      const dateA = parseDate(a.data_vencimento)?.getTime() ?? Infinity;
+      const dateB = parseDate(b.data_vencimento)?.getTime() ?? Infinity;
+      if (dateA !== dateB) return dateA - dateB;
+      return (a.numero_parcela ?? 0) - (b.numero_parcela ?? 0);
+    });
+
+  const parcelaPendente = pendingParcelas[0];
+
+  const vencimento = parcelaPendente?.data_vencimento || p.data_vencimento;
+  const valorParcela = parcelaPendente?.valor
+    ? Number(parcelaPendente.valor)
+    : Number(p.valor ?? 0) / numParcelas;
+
+  return {
+    numParcelas,
+    parcelaPendente,
+    vencimento,
+    valorParcela,
+  };
 }
 
 export default async function PagamentosPage({
@@ -129,8 +180,9 @@ export default async function PagamentosPage({
     return { ...p, venda, cliente };
   });
 
-  const startDate = dataInicio ? new Date(`${dataInicio}T00:00:00`) : null;
-  const endDate = dataFim ? new Date(`${dataFim}T23:59:59`) : null;
+  const startDate = dataInicio ? parseDate(dataInicio) : null;
+  const endDate = dataFim ? parseDate(dataFim) : null;
+  if (endDate) endDate.setHours(23, 59, 59, 999);
 
   const matchesDateRange = (value: string | null) => {
     if (!value) return true;
@@ -147,17 +199,18 @@ export default async function PagamentosPage({
     return matchesDateRange(p.data_vencimento);
   });
 
-  // Somatória dos valores dos pagamentos exibidos (filtrados)
   const totalFiltrado = filteredPagamentos.reduce(
     (acc: number, p: any) => acc + Number(p.valor ?? 0),
     0
   );
 
   const pendentesNos30Dias = normalizedPagamentos.filter((p: any) => {
-    if (p.status !== "pendente") return false;
+    const { vencimento, parcelaPendente } = getPaymentEffectivePendingInfo(p);
+
+    if (p.status !== "pendente" && !parcelaPendente) return false;
     if (clienteFilter !== "todos" && p.cliente?.id !== clienteFilter) return false;
-    if (!matchesDateRange(p.data_vencimento)) return false;
-    return isWithinNext30Days(p.data_vencimento);
+    if (!matchesDateRange(vencimento)) return false;
+    return isWithinNext30Days(vencimento);
   });
 
   return (
@@ -181,43 +234,59 @@ export default async function PagamentosPage({
             </p>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {pendentesNos30Dias.map((p: any) => (
-                <div key={p.id} className="rounded border bg-white p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-medium">
-                        {p.cliente?.nome ?? "Cliente sem vínculo"}
-                      </div>
-                      <div className="text-xs text-ink/60">{formatForma(p.forma)}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold">
-                        R$ {Number(p.valor ?? 0).toFixed(2)}
-                      </div>
-                      <div className="text-xs text-ink/60">
-                        {p.data_vencimento
-                          ? new Date(p.data_vencimento).toLocaleDateString("pt-BR")
-                          : "Sem vencimento"}
-                      </div>
-                    </div>
-                  </div>
+              {pendentesNos30Dias.map((p: any) => {
+                const { numParcelas, vencimento, valorParcela } =
+                  getPaymentEffectivePendingInfo(p);
 
-                  <div className="mt-3">
-                    <a
-                      href={buildWhatsappLink(p.cliente?.telefone ?? null, p)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={`inline-flex rounded px-3 py-2 text-xs font-medium ${
-                        p.cliente?.telefone
-                          ? "bg-green-600 text-white hover:bg-green-700"
-                          : "pointer-events-none bg-slate-200 text-slate-500"
-                      }`}
-                    >
-                      {p.cliente?.telefone ? "Enviar lembrete" : "Telefone não cadastrado"}
-                    </a>
+                return (
+                  <div key={p.id} className="rounded border bg-white p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="font-medium">
+                          {p.cliente?.nome ?? "Cliente sem vínculo"}
+                        </div>
+                        <div className="text-xs text-ink/60">
+                          {formatForma(p.forma)}
+                          {numParcelas > 1 ? ` (${numParcelas}x)` : ""}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-brand-700">
+                          {formatMoney(valorParcela)}
+                        </div>
+                        {numParcelas > 1 && (
+                          <div className="text-[10px] text-ink/60">
+                            (valor da parcela)
+                          </div>
+                        )}
+                        <div className="text-xs text-ink/60">
+                          {vencimento ? formatDateBR(vencimento) : "Sem vencimento"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <a
+                        href={buildWhatsappLink(
+                          p.cliente?.telefone ?? null,
+                          p,
+                          valorParcela,
+                          vencimento
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`inline-flex rounded px-3 py-2 text-xs font-medium ${
+                          p.cliente?.telefone
+                            ? "bg-green-600 text-white hover:bg-green-700"
+                            : "pointer-events-none bg-slate-200 text-slate-500"
+                        }`}
+                      >
+                        {p.cliente?.telefone ? "Enviar lembrete" : "Telefone não cadastrado"}
+                      </a>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -308,7 +377,6 @@ export default async function PagamentosPage({
               ))}
             </div>
 
-            {/* Card com o indicador da somatória dos itens filtrados */}
             <div className="mb-4 flex items-center justify-between rounded border bg-white p-4 shadow-sm">
               <div>
                 <span className="text-xs font-medium uppercase tracking-wider text-ink/60">
@@ -341,16 +409,10 @@ export default async function PagamentosPage({
                           {formatStatus(p.status)}
                         </div>
                         <div className="text-sm text-ink/60">
-                          Pago:{" "}
-                          {p.data_pagamento
-                            ? new Date(p.data_pagamento).toLocaleDateString("pt-BR")
-                            : "-"}
+                          Pago: {formatDateBR(p.data_pagamento)}
                         </div>
                         <div className="text-sm text-ink/60">
-                          Venc.:{" "}
-                          {p.data_vencimento
-                            ? new Date(p.data_vencimento).toLocaleDateString("pt-BR")
-                            : "-"}
+                          Venc.: {formatDateBR(p.data_vencimento)}
                         </div>
                       </div>
                       <div className="text-right">
@@ -364,7 +426,7 @@ export default async function PagamentosPage({
                             }
                             className="text-brand-600 hover:underline"
                           >
-                            Venda: {p.venda_id ?? "—"}
+                            Venda: {p.venda_id ?? "\u2014"}
                           </a>
                         </div>
                       </div>
