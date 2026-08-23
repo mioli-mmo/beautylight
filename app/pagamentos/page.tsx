@@ -442,7 +442,7 @@ export default async function PagamentosPage({
                             href={`/vendas/${p.venda_id}/detalhes`}
                             className="text-sm text-brand-600"
                           >
-                            Ver venda
+                            Detalhes
                           </a>
                         )}
                         <PagamentoActions id={p.id} />
