@@ -6,14 +6,14 @@ import { useRouter } from "next/navigation";
 type Item = {
   produto_id?: string | null;
   produto_nome: string;
-  quantidade: number;
-  preco_unitario: number;
+  quantidade: number | string;
+  preco_unitario: number | string;
 };
 
 type PagamentoConfig = {
   forma: string;
-  valor: number;
-  parcelas: number;
+  valor: number | string;
+  parcelas: number | string;
   data_pagamento: string | null;
   data_vencimento: string | null;
   observacoes: string | null;
@@ -26,18 +26,26 @@ function addMonths(dateString: string | null, months: number) {
   return date.toISOString();
 }
 
+function parseDecimal(value: any) {
+  if (value === null || value === undefined || value === "") return 0;
+  return Number(String(value).replace(",", ".")) || 0;
+}
+
 function buildPagamentoSchedule(total: number, config: PagamentoConfig) {
   const baseTotal = Number(total) || 0;
   if (baseTotal <= 0) return [];
 
   const forma = config.forma || "dinheiro";
-  const parcelas = Math.max(1, Number(config.parcelas) || 1);
+  const parcelas = Math.max(1, parseInt(String(config.parcelas), 10) || 1);
   const dataVencimento = config.data_vencimento;
 
   if (["fiado", "credito_parcelado"].includes(forma)) {
     const valorPorParcela = baseTotal / parcelas;
     return Array.from({ length: parcelas }, (_, index) => {
-      const valor = index === parcelas - 1 ? Number((baseTotal - valorPorParcela * (parcelas - 1)).toFixed(2)) : Number(valorPorParcela.toFixed(2));
+      const valor =
+        index === parcelas - 1
+          ? Number((baseTotal - valorPorParcela * (parcelas - 1)).toFixed(2))
+          : Number(valorPorParcela.toFixed(2));
 
       return {
         forma,
@@ -113,7 +121,7 @@ export function VendaForm({ venda }: { venda?: any }) {
           preco_unitario: it.preco_unitario,
         })),
         pagamento: {
-          forma: (venda.pagamentos?.[0]?.forma) ?? "dinheiro",
+          forma: venda.pagamentos?.[0]?.forma ?? "dinheiro",
           valor: Number(venda.pagamentos?.[0]?.valor ?? 0),
           parcelas: Number(venda.pagamentos?.[0]?.parcelas ?? 1),
           data_pagamento: venda.pagamentos?.[0]?.data_pagamento ?? null,
@@ -124,11 +132,6 @@ export function VendaForm({ venda }: { venda?: any }) {
     }
   }, [venda]);
 
-  function parseDecimal(value: string) {
-    if (value === null || value === undefined || value === "") return 0;
-    return Number(String(value).replace(",", ".")) || 0;
-  }
-
   function addItemFromProduct(produtoId: string) {
     const prod = products.find((p) => p.id === produtoId);
     if (!prod) return;
@@ -136,7 +139,12 @@ export function VendaForm({ venda }: { venda?: any }) {
       ...f,
       venda_itens: [
         ...f.venda_itens,
-        { produto_id: prod.id, produto_nome: prod.nome, quantidade: 1, preco_unitario: prod.preco_venda },
+        {
+          produto_id: prod.id,
+          produto_nome: prod.nome,
+          quantidade: 1,
+          preco_unitario: prod.preco_venda,
+        },
       ],
     }));
   }
@@ -150,15 +158,22 @@ export function VendaForm({ venda }: { venda?: any }) {
   }
 
   function removeItem(index: number) {
-    setForm((f: any) => ({ ...f, venda_itens: f.venda_itens.filter((_: any, i: number) => i !== index) }));
+    setForm((f: any) => ({
+      ...f,
+      venda_itens: f.venda_itens.filter((_: any, i: number) => i !== index),
+    }));
   }
 
   function subtotal() {
-    return form.venda_itens.reduce((s: number, it: Item) => s + it.quantidade * it.preco_unitario, 0);
+    return form.venda_itens.reduce((s: number, it: Item) => {
+      const qtd = parseDecimal(it.quantidade);
+      const preco = parseDecimal(it.preco_unitario);
+      return s + qtd * preco;
+    }, 0);
   }
 
   function totalComDesconto() {
-    return subtotal() - (Number(form.desconto ?? 0) || 0);
+    return subtotal() - parseDecimal(form.desconto);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -172,18 +187,28 @@ export function VendaForm({ venda }: { venda?: any }) {
         valor: total,
       });
 
-      if (["fiado", "credito_parcelado"].includes(form.pagamento.forma) && !form.pagamento.data_vencimento) {
+      if (
+        ["fiado", "credito_parcelado"].includes(form.pagamento.forma) &&
+        !form.pagamento.data_vencimento
+      ) {
         throw new Error("Informe a data de vencimento para o pagamento parcelado/fiado.");
       }
+
+      // Converte quantidades e preços para tipos numéricos puros antes do envio
+      const vendaItensFormatados = form.venda_itens.map((it: Item) => ({
+        ...it,
+        quantidade: parseDecimal(it.quantidade),
+        preco_unitario: parseDecimal(it.preco_unitario),
+      }));
 
       const payload = {
         cliente_id: form.cliente_id ?? null,
         data_venda: new Date().toISOString(),
         status: "pendente",
         valor_total: total,
-        desconto: form.desconto ?? 0,
+        desconto: parseDecimal(form.desconto),
         observacoes: form.observacoes ?? null,
-        venda_itens: form.venda_itens,
+        venda_itens: vendaItensFormatados,
         pagamentos,
       };
 
@@ -251,9 +276,13 @@ export function VendaForm({ venda }: { venda?: any }) {
           <input
             type="text"
             inputMode="decimal"
-            pattern="[0-9]*[.,]?[0-9]*"
             value={String(form.desconto ?? 0)}
-            onChange={(e) => setForm({ ...form, desconto: parseDecimal(e.target.value) })}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (/^[0-9]*[.,]?[0-9]*$/.test(val)) {
+                setForm({ ...form, desconto: val });
+              }
+            }}
             className="w-full rounded border px-2 py-2"
           />
         </label>
@@ -261,42 +290,66 @@ export function VendaForm({ venda }: { venda?: any }) {
 
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <select className="rounded border px-2 py-2" onChange={(e) => addItemFromProduct(e.target.value)}>
+          <select
+            className="rounded border px-2 py-2"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) addItemFromProduct(e.target.value);
+            }}
+          >
             <option value="">Adicionar produto...</option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.nome} — {p.preco_venda}
+                {p.nome} — R$ {p.preco_venda}
               </option>
             ))}
           </select>
         </div>
 
-        {form.venda_itens.length === 0 && <div className="text-sm text-ink/60">Nenhum item adicionado.</div>}
+        {form.venda_itens.length === 0 && (
+          <div className="text-sm text-ink/60">Nenhum item adicionado.</div>
+        )}
 
         <div className="space-y-2">
           {form.venda_itens.map((it: Item, i: number) => (
             <div key={i} className="flex items-center gap-2">
               <div className="flex-1">
                 <div className="text-sm font-medium">{it.produto_nome}</div>
-                <div className="text-xs text-ink/60">Preço unit.: {it.preco_unitario}</div>
               </div>
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                className="w-20 rounded border px-2 py-1"
-                value={String(it.quantidade)}
-                onChange={(e) => updateItem(i, { quantidade: parseDecimal(e.target.value) })}
-              />
-              <input
-                type="text"
-                inputMode="decimal"
-                pattern="[0-9]*[.,]?[0-9]*"
-                className="w-28 rounded border px-2 py-1"
-                value={String(it.preco_unitario)}
-                onChange={(e) => updateItem(i, { preco_unitario: parseDecimal(e.target.value) })}
-              />
-              <button type="button" onClick={() => removeItem(i)} className="text-sm text-red-600">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-ink/60">Qtd.</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="w-16 rounded border px-2 py-1 text-sm"
+                  value={String(it.quantidade)}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "");
+                    updateItem(i, { quantidade: val });
+                  }}
+                />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-ink/60">Preço R$</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  className="w-24 rounded border px-2 py-1 text-sm"
+                  value={String(it.preco_unitario)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (/^[0-9]*[.,]?[0-9]*$/.test(val)) {
+                      updateItem(i, { preco_unitario: val });
+                    }
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeItem(i)}
+                className="mt-4 text-sm text-red-600 hover:underline"
+              >
                 Remover
               </button>
             </div>
@@ -311,7 +364,12 @@ export function VendaForm({ venda }: { venda?: any }) {
             <span className="font-medium text-ink">Forma</span>
             <select
               value={form.pagamento.forma}
-              onChange={(e) => setForm({ ...form, pagamento: { ...form.pagamento, forma: e.target.value } })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  pagamento: { ...form.pagamento, forma: e.target.value },
+                })
+              }
               className="w-full rounded border px-2 py-2"
             >
               <option value="dinheiro">Dinheiro</option>
@@ -326,10 +384,17 @@ export function VendaForm({ venda }: { venda?: any }) {
           <label className="space-y-1 text-sm text-ink/80">
             <span className="font-medium text-ink">Parcelas</span>
             <input
-              type="number"
-              min={1}
-              value={form.pagamento.parcelas}
-              onChange={(e) => setForm({ ...form, pagamento: { ...form.pagamento, parcelas: Number(e.target.value) || 1 } })}
+              type="text"
+              inputMode="numeric"
+              placeholder="1"
+              value={String(form.pagamento.parcelas)}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "");
+                setForm({
+                  ...form,
+                  pagamento: { ...form.pagamento, parcelas: val },
+                });
+              }}
               className="w-full rounded border px-2 py-2"
             />
           </label>
@@ -339,7 +404,12 @@ export function VendaForm({ venda }: { venda?: any }) {
             <input
               type="date"
               value={form.pagamento.data_vencimento ?? ""}
-              onChange={(e) => setForm({ ...form, pagamento: { ...form.pagamento, data_vencimento: e.target.value || null } })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  pagamento: { ...form.pagamento, data_vencimento: e.target.value || null },
+                })
+              }
               className="w-full rounded border px-2 py-2"
             />
           </label>
@@ -349,25 +419,41 @@ export function VendaForm({ venda }: { venda?: any }) {
             <input
               type="text"
               inputMode="decimal"
-              pattern="[0-9]*[.,]?[0-9]*"
-              value={String((form.pagamento.valor || totalComDesconto()).toFixed(2))}
-              onChange={(e) => setForm({ ...form, pagamento: { ...form.pagamento, valor: parseDecimal(e.target.value) } })}
+              value={
+                form.pagamento.valor
+                  ? String(form.pagamento.valor)
+                  : totalComDesconto().toFixed(2)
+              }
+              onChange={(e) => {
+                const val = e.target.value;
+                if (/^[0-9]*[.,]?[0-9]*$/.test(val)) {
+                  setForm({
+                    ...form,
+                    pagamento: { ...form.pagamento, valor: val },
+                  });
+                }
+              }}
               className="w-full rounded border px-2 py-2"
             />
           </label>
         </div>
 
-        {(["fiado", "credito_parcelado"].includes(form.pagamento.forma)) && (
+        {["fiado", "credito_parcelado"].includes(form.pagamento.forma) && (
           <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
-            Para {form.pagamento.forma === "fiado" ? "fiado" : "crédito parcelado"}, o sistema gera automaticamente as parcelas pendentes com vencimento a partir da data escolhida.
+            Para {form.pagamento.forma === "fiado" ? "fiado" : "crédito parcelado"}, o sistema gera
+            automaticamente as parcelas pendentes com vencimento a partir da data escolhida.
           </div>
         )}
       </div>
 
       <div className="space-y-2">
-        <div className="text-sm">Subtotal: {subtotal().toFixed(2)}</div>
-        <div className="text-sm">Desconto: {Number(form.desconto ?? 0).toFixed(2)}</div>
-        <div className="text-lg font-semibold">Total: {totalComDesconto().toFixed(2)}</div>
+        <div className="text-sm">Subtotal: R$ {subtotal().toFixed(2)}</div>
+        <div className="text-sm">
+          Desconto: R$ {parseDecimal(form.desconto).toFixed(2)}
+        </div>
+        <div className="text-lg font-semibold">
+          Total: R$ {totalComDesconto().toFixed(2)}
+        </div>
       </div>
 
       <div className="flex gap-2">
