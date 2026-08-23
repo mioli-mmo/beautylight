@@ -35,6 +35,18 @@ function parseDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value || 0);
+}
+
+function formatDateBR(value: string | null) {
+  const date = parseDate(value);
+  return date ? date.toLocaleDateString("pt-BR") : "sem data de vencimento";
+}
+
 function isWithinNext30Days(value: string | null) {
   if (!value) return false;
   const dueDate = parseDate(value);
@@ -49,8 +61,16 @@ function buildWhatsappLink(phone: string | null, payment: any) {
   if (!phone) return "#";
   const digits = phone.replace(/\D/g, "");
   if (!digits) return "#";
-  const message = `Olá!%20Sou%20o%20responsável%20pela%20empresa%20e%20venho%20lembrar%20o%20pagamento%20pendente%20de%20R$%20${Number(payment.valor ?? 0).toFixed(2)}%20com%20vencimento%20em%20${parseDate(payment.data_vencimento)?.toLocaleDateString("pt-BR") ?? "breve"}.%20Agradecemos%20a%20preferência%20e%20ficamos%20à%20disposição.`;
-  return `https://wa.me/55${digits}?text=${message}`;
+  const message = `Olá, ${payment.cliente?.nome ?? "tudo bem"}! Tudo bem? ✨
+
+Esta é uma mensagem automática da BL passando para lembrar do seu pagamento pendente:
+
+💰 Valor: ${formatMoney(Number(payment.valor ?? 0))}
+
+📅 Vencimento: ${formatDateBR(payment.data_vencimento)}
+
+Qualquer dúvida ou se já tiver realizado o pagamento, é só nos avisar por aqui. Muito obrigada pelo carinho e preferência! 💄💅`;
+  return `https://wa.me/55${digits}?text=${encodeURIComponent(message)}`;
 }
 
 function buildStatusHref(status: string, filters: { clienteId: string; inicio: string; fim: string }) {

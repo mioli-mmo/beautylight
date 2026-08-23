@@ -164,7 +164,7 @@ export function PagamentoForm({ pagamento }: { pagamento?: any }) {
     }
   }
 
-  const renderParcelasEditor = ["fiado", "credito_parcelado"].includes(form.forma);
+  const renderParcelasEditor = !pagamento && ["fiado", "credito_parcelado"].includes(form.forma);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
