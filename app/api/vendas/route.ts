@@ -1,6 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function parseDate(value: any) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return new Date(`${value}T12:00:00`).toISOString();
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  return new Date(value).toISOString();
+}
+
+function addMonths(dateValue: string | null, months: number) {
+  if (!dateValue) return null;
+  const date = new Date(dateValue);
+  date.setMonth(date.getMonth() + months);
+  return date.toISOString();
+}
+
+function buildPagamentoSchedule(total: number, config: any = {}) {
+  const valorTotal = Number(total) || 0;
+  if (valorTotal <= 0) return [];
+
+  const forma = config.forma || "dinheiro";
+  const parcelas = Math.max(1, Number(config.parcelas) || 1);
+  const dataBase = config.data_vencimento ?? null;
+
+  if (["fiado", "credito_parcelado"].includes(forma)) {
+    const valorPorParcela = valorTotal / parcelas;
+    return Array.from({ length: parcelas }, (_, index) => ({
+      forma,
+      status: "pendente",
+      valor: index === parcelas - 1 ? Number((valorTotal - valorPorParcela * (parcelas - 1)).toFixed(2)) : Number(valorPorParcela.toFixed(2)),
+      parcelas,
+      data_pagamento: null,
+      data_vencimento: dataBase ? addMonths(parseDate(dataBase), index) : null,
+      observacoes: config.observacoes ?? null,
+    }));
+  }
+
+  return [{
+    forma,
+    status: ["dinheiro", "pix", "debito", "credito_vista"].includes(forma) ? "pago" : "pendente",
+    valor: valorTotal,
+    parcelas: 1,
+    data_pagamento: new Date().toISOString(),
+    data_vencimento: parseDate(config.data_vencimento ?? null),
+    observacoes: config.observacoes ?? null,
+  }];
+}
+
 export async function GET(_req: NextRequest) {
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -26,13 +77,11 @@ export async function POST(req: NextRequest) {
 
   const supabase = await createClient();
 
-  // criar venda
   const { data: venda, error: vendaError } = await supabase.from("vendas").insert([payload]).select().single();
   if (vendaError || !venda) return NextResponse.json({ error: vendaError?.message ?? "Failed to create venda" }, { status: 500 });
 
   const vendaId = venda.id;
 
-  // inserir itens (depois do insert para disparar triggers de estoque)
   if (Array.isArray(body.venda_itens) && body.venda_itens.length > 0) {
     const itens = body.venda_itens.map((it: any) => ({
       venda_id: vendaId,
@@ -46,11 +95,15 @@ export async function POST(req: NextRequest) {
     if (itensError) return NextResponse.json({ error: itensError.message }, { status: 500 });
   }
 
-  // inserir pagamentos, se houver
-  if (Array.isArray(body.pagamentos) && body.pagamentos.length > 0) {
-    const pagamentos = body.pagamentos.map((p: any) => ({
+  let pagamentos = Array.isArray(body.pagamentos) ? body.pagamentos : [];
+  if (pagamentos.length === 0 && body.forma_pagamento) {
+    pagamentos = buildPagamentoSchedule(body.valor_total ?? 0, body);
+  }
+
+  if (pagamentos.length > 0) {
+    const payloadPagamentos = pagamentos.map((p: any) => ({
       venda_id: vendaId,
-      forma: p.forma,
+      forma: p.forma ?? body.forma_pagamento ?? "dinheiro",
       status: p.status ?? "pendente",
       valor: p.valor ?? 0,
       parcelas: p.parcelas ?? 1,
@@ -59,7 +112,7 @@ export async function POST(req: NextRequest) {
       observacoes: p.observacoes ?? null,
     }));
 
-    const { error: pagamentosError } = await supabase.from("pagamentos").insert(pagamentos);
+    const { error: pagamentosError } = await supabase.from("pagamentos").insert(payloadPagamentos);
     if (pagamentosError) return NextResponse.json({ error: pagamentosError.message }, { status: 500 });
   }
 
