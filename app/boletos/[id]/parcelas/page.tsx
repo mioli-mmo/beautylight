@@ -9,8 +9,6 @@ export default async function BoletosParcelasPage({ params }: { params: { id: st
       <PageHeader title="Parcelas do boleto" />
       <div className="p-4 md:p-8">
         <div className="rounded border p-4">
-          {/* ParcelasList is a client component that fetches parcelas and allows actions */}
-          {/* @ts-expect-error Server component importing client component */}
           <ParcelasList boletoId={id} />
         </div>
       </div>

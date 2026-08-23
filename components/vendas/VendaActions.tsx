@@ -15,8 +15,15 @@ export function VendaActions({ id }: { id: string }) {
     router.push(`/vendas/${id}`);
   }
 
+  function handleDetails() {
+    router.push(`/vendas/${id}/detalhes`);
+  }
+
   return (
     <div className="flex gap-2">
+      <button onClick={handleDetails} className="text-sm text-brand-600">
+        Detalhes
+      </button>
       <button onClick={handleEdit} className="text-sm text-brand-600">
         Editar
       </button>

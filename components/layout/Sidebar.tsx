@@ -3,13 +3,13 @@
 // TODO: destacar item ativo com usePathname()
 
 const LINKS = [
-  { href: "/", label: "Início" },
-  { href: "/produtos", label: "Produtos" },
-  { href: "/clientes", label: "Clientes" },
-  { href: "/vendas", label: "Vendas" },
-  { href: "/pagamentos", label: "Pagamentos" },
-  { href: "/boletos", label: "Boletos" },
-  { href: "/estoque", label: "Estoque" },
+  { href: "/", label: "Início", icon: "🏠" },
+  { href: "/produtos", label: "Produtos", icon: "📦" },
+  { href: "/clientes", label: "Clientes", icon: "👥" },
+  { href: "/vendas", label: "Vendas", icon: "💰" },
+  { href: "/pagamentos", label: "Pagamentos", icon: "💳" },
+  { href: "/boletos", label: "Boletos", icon: "🧾" },
+  { href: "/estoque", label: "Estoque", icon: "📊" },
 ];
 
 export function Sidebar() {
@@ -26,9 +26,10 @@ export function Sidebar() {
           <a
             key={link.href}
             href={link.href}
-            className="rounded-md px-3 py-2 text-sm font-medium text-ink/80 hover:bg-brand-100 hover:text-brand-700"
+            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-ink/80 hover:bg-brand-100 hover:text-brand-700"
           >
-            {link.label}
+            <span aria-hidden="true" className="text-base">{link.icon}</span>
+            <span>{link.label}</span>
           </a>
         ))}
       </nav>
