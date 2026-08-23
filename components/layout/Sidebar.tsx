@@ -1,3 +1,5 @@
+import { BrandMark } from "@/components/layout/BrandMark";
+
 // Navegação lateral — visível em telas médias/grandes (desktop/tablet).
 // Skeleton: apenas estrutura e links, sem estado de rota ativa ainda.
 // TODO: destacar item ativo com usePathname()
@@ -16,9 +18,7 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex md:w-56 md:flex-col md:border-r md:border-brand-200 md:bg-white md:px-4 md:py-6">
       <div className="mb-8 px-2">
-        <span className="font-display text-lg font-semibold text-brand-700">
-          Beauty Light
-        </span>
+        <BrandMark />
       </div>
 
       <nav className="flex flex-col gap-1">

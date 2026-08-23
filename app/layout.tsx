@@ -4,8 +4,11 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 
 export const metadata: Metadata = {
-  title: "Beauty Light",
+  title: "BL Cosméticos",
   description: "Controle de vendas de cosméticos",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 // Layout raiz — esqueleto.
