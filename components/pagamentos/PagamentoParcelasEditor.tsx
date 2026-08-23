@@ -22,13 +22,18 @@ function parseDecimal(value: string) {
 }
 
 export function PagamentoParcelasEditor({ pagamento }: { pagamento: any }) {
-  const [parcelas, setParcelas] = useState<any[]>(() => (pagamento?.pagamento_parcelas ?? []).map((parcela: any) => ({
-    ...parcela,
-    valor: Number(parcela.valor ?? 0),
-    data_vencimento: formatDateForInput(parcela.data_vencimento),
-  })));
+  const [parcelas, setParcelas] = useState<any[]>(() =>
+    (pagamento?.pagamento_parcelas ?? []).map((parcela: any) => ({
+      ...parcela,
+      valor: Number(parcela.valor ?? 0),
+      data_vencimento: formatDateForInput(parcela.data_vencimento),
+    }))
+  );
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Toggle com padrão 'true'
+  const [reorganizarParcelas, setReorganizarParcelas] = useState<boolean>(true);
 
   async function saveParcela(parcela: any) {
     setSavingId(parcela.id);
@@ -41,23 +46,37 @@ export function PagamentoParcelasEditor({ pagamento }: { pagamento: any }) {
         body: JSON.stringify({
           valor: parcela.valor,
           data_vencimento: parcela.data_vencimento || null,
+          reorganizar_parcelas: reorganizarParcelas,
         }),
       });
 
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Não foi possível salvar a parcela.");
 
-      setParcelas((prev) =>
-        prev.map((item) =>
-          item.id === parcela.id
-            ? {
-                ...item,
-                valor: Number(body?.valor ?? parcela.valor ?? 0),
-                data_vencimento: body?.data_vencimento ? formatDateForInput(body.data_vencimento) : parcela.data_vencimento,
-              }
-            : item
-        )
-      );
+      // Se o backend retornar a lista inteira de parcelas atualizadas
+      if (Array.isArray(body?.parcelas)) {
+        setParcelas(
+          body.parcelas.map((p: any) => ({
+            ...p,
+            valor: Number(p.valor ?? 0),
+            data_vencimento: formatDateForInput(p.data_vencimento),
+          }))
+        );
+      } else {
+        setParcelas((prev) =>
+          prev.map((item) =>
+            item.id === parcela.id
+              ? {
+                  ...item,
+                  valor: Number(body?.valor ?? parcela.valor ?? 0),
+                  data_vencimento: body?.data_vencimento
+                    ? formatDateForInput(body.data_vencimento)
+                    : parcela.data_vencimento,
+                }
+              : item
+          )
+        );
+      }
     } catch (err: any) {
       setError(err?.message ?? "Erro ao salvar parcela.");
     } finally {
@@ -69,10 +88,29 @@ export function PagamentoParcelasEditor({ pagamento }: { pagamento: any }) {
 
   return (
     <div>
-      <div className="mb-4">
-        <h3 className="text-lg font-medium text-brand-700">Parcelas do pagamento</h3>
-        <p className="text-sm text-ink/60">Edite valor e vencimento de cada parcela individualmente.</p>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b pb-3">
+        <div>
+          <h3 className="text-lg font-medium text-brand-700">Parcelas do pagamento</h3>
+          <p className="text-sm text-ink/60">Edite valor e vencimento de cada parcela individualmente.</p>
+        </div>
+
+        {/* Toggle 'Reorganizar parcelas' */}
+        <label className="inline-flex items-center gap-2 cursor-pointer select-none rounded border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={reorganizarParcelas}
+            onChange={(e) => setReorganizarParcelas(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
+          />
+          <span className="font-medium">Reorganizar parcelas restantes</span>
+        </label>
       </div>
+
+      <p className="mb-4 text-xs text-ink/60">
+        {reorganizarParcelas
+          ? "💡 Reorganizar ativo: a diferença do valor alterado será redistribuída nas parcelas pendentes futuras."
+          : "⚠️ Reorganizar inativo: altera apenas esta parcela e atualiza o valor total do fiado."}
+      </p>
 
       {error && (
         <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

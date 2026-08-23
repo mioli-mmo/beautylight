@@ -4,6 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { PagamentoForm } from "@/components/pagamentos/PagamentoForm";
 import { PagamentoActions } from "@/components/pagamentos/PagamentoActions";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const formaLabels: Record<string, string> = {
   credito_vista: "Crédito à vista",
   credito_parcelado: "Crédito parcelado",
@@ -73,10 +76,14 @@ Qualquer dúvida ou se já tiver realizado o pagamento, é só nos avisar por aq
   return `https://wa.me/55${digits}?text=${encodeURIComponent(message)}`;
 }
 
-function buildStatusHref(status: string, filters: { clienteId: string; inicio: string; fim: string }) {
+function buildStatusHref(
+  status: string,
+  filters: { clienteId: string; inicio: string; fim: string }
+) {
   const params = new URLSearchParams();
   if (status !== "todos") params.set("status", status);
-  if (filters.clienteId && filters.clienteId !== "todos") params.set("cliente_id", filters.clienteId);
+  if (filters.clienteId && filters.clienteId !== "todos")
+    params.set("cliente_id", filters.clienteId);
   if (filters.inicio) params.set("data_inicio", filters.inicio);
   if (filters.fim) params.set("data_fim", filters.fim);
   const query = params.toString();
@@ -86,17 +93,32 @@ function buildStatusHref(status: string, filters: { clienteId: string; inicio: s
 export default async function PagamentosPage({
   searchParams,
 }: {
-  searchParams?: { status?: string; cliente_id?: string; data_inicio?: string; data_fim?: string };
+  searchParams?:
+    | { status?: string; cliente_id?: string; data_inicio?: string; data_fim?: string }
+    | Promise<{ status?: string; cliente_id?: string; data_inicio?: string; data_fim?: string }>;
 }) {
+  const resolvedSearchParams = await searchParams;
   const supabase = await createClient();
-  const statusFilter = searchParams?.status ?? "todos";
-  const clienteFilter = searchParams?.cliente_id ?? "todos";
-  const dataInicio = searchParams?.data_inicio ?? "";
-  const dataFim = searchParams?.data_fim ?? "";
 
-  const { data: pagamentos, error: pagError } = await supabase.from("pagamentos").select("*").order("data_vencimento", { ascending: true });
-  const { data: vendas } = await supabase.from("vendas").select("id, cliente_id, valor_total").order("data_venda", { ascending: false });
-  const { data: clientes } = await supabase.from("clientes").select("id, nome, telefone").order("nome");
+  const statusFilter = resolvedSearchParams?.status ?? "todos";
+  const clienteFilter = resolvedSearchParams?.cliente_id ?? "todos";
+  const dataInicio = resolvedSearchParams?.data_inicio ?? "";
+  const dataFim = resolvedSearchParams?.data_fim ?? "";
+
+  const { data: pagamentos, error: pagError } = await supabase
+    .from("pagamentos")
+    .select("*, pagamento_parcelas(*)")
+    .order("data_vencimento", { ascending: true });
+
+  const { data: vendas } = await supabase
+    .from("vendas")
+    .select("id, cliente_id, valor_total")
+    .order("data_venda", { ascending: false });
+
+  const { data: clientes } = await supabase
+    .from("clientes")
+    .select("id, nome, telefone")
+    .order("nome");
 
   const vendasMap = new Map((vendas ?? []).map((v: any) => [v.id, v]));
   const clientesMap = new Map((clientes ?? []).map((c: any) => [c.id, c]));
@@ -125,6 +147,12 @@ export default async function PagamentosPage({
     return matchesDateRange(p.data_vencimento);
   });
 
+  // Somatória dos valores dos pagamentos exibidos (filtrados)
+  const totalFiltrado = filteredPagamentos.reduce(
+    (acc: number, p: any) => acc + Number(p.valor ?? 0),
+    0
+  );
+
   const pendentesNos30Dias = normalizedPagamentos.filter((p: any) => {
     if (p.status !== "pendente") return false;
     if (clienteFilter !== "todos" && p.cliente?.id !== clienteFilter) return false;
@@ -139,26 +167,38 @@ export default async function PagamentosPage({
       <div className="p-4 md:p-8">
         <div className="mb-6 rounded border border-brand-200 bg-brand-50 p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-lg font-medium text-brand-700">Pendentes nos próximos 30 dias</h3>
+            <h3 className="text-lg font-medium text-brand-700">
+              Pendentes nos próximos 30 dias
+            </h3>
             <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-brand-700">
               {pendentesNos30Dias.length} registros
             </span>
           </div>
 
           {pendentesNos30Dias.length === 0 ? (
-            <p className="text-sm text-ink/60">Nenhum pagamento pendente com vencimento nos próximos 30 dias.</p>
+            <p className="text-sm text-ink/60">
+              Nenhum pagamento pendente com vencimento nos próximos 30 dias.
+            </p>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {pendentesNos30Dias.map((p: any) => (
                 <div key={p.id} className="rounded border bg-white p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <div className="font-medium">{p.cliente?.nome ?? "Cliente sem vínculo"}</div>
+                      <div className="font-medium">
+                        {p.cliente?.nome ?? "Cliente sem vínculo"}
+                      </div>
                       <div className="text-xs text-ink/60">{formatForma(p.forma)}</div>
                     </div>
                     <div className="text-right">
-                      <div className="font-semibold">R$ {Number(p.valor ?? 0).toFixed(2)}</div>
-                      <div className="text-xs text-ink/60">{p.data_vencimento ? new Date(p.data_vencimento).toLocaleDateString("pt-BR") : "Sem vencimento"}</div>
+                      <div className="font-semibold">
+                        R$ {Number(p.valor ?? 0).toFixed(2)}
+                      </div>
+                      <div className="text-xs text-ink/60">
+                        {p.data_vencimento
+                          ? new Date(p.data_vencimento).toLocaleDateString("pt-BR")
+                          : "Sem vencimento"}
+                      </div>
                     </div>
                   </div>
 
@@ -167,7 +207,11 @@ export default async function PagamentosPage({
                       href={buildWhatsappLink(p.cliente?.telefone ?? null, p)}
                       target="_blank"
                       rel="noreferrer"
-                      className={`inline-flex rounded px-3 py-2 text-xs font-medium ${p.cliente?.telefone ? "bg-green-600 text-white hover:bg-green-700" : "pointer-events-none bg-slate-200 text-slate-500"}`}
+                      className={`inline-flex rounded px-3 py-2 text-xs font-medium ${
+                        p.cliente?.telefone
+                          ? "bg-green-600 text-white hover:bg-green-700"
+                          : "pointer-events-none bg-slate-200 text-slate-500"
+                      }`}
                     >
                       {p.cliente?.telefone ? "Enviar lembrete" : "Telefone não cadastrado"}
                     </a>
@@ -185,29 +229,55 @@ export default async function PagamentosPage({
                 <input type="hidden" name="status" value={statusFilter} />
                 <label className="flex-1 text-sm text-ink/80">
                   <span className="mb-1 block font-medium text-ink">Cliente</span>
-                  <select name="cliente_id" defaultValue={clienteFilter} className="w-full rounded border px-2 py-2">
+                  <select
+                    name="cliente_id"
+                    defaultValue={clienteFilter}
+                    className="w-full rounded border px-2 py-2"
+                  >
                     <option value="todos">Todos</option>
                     {(clientes ?? []).map((cliente: any) => (
-                      <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>
+                      <option key={cliente.id} value={cliente.id}>
+                        {cliente.nome}
+                      </option>
                     ))}
                   </select>
                 </label>
 
                 <label className="text-sm text-ink/80">
                   <span className="mb-1 block font-medium text-ink">Vencimento início</span>
-                  <input type="date" name="data_inicio" defaultValue={dataInicio} className="rounded border px-2 py-2" />
+                  <input
+                    type="date"
+                    name="data_inicio"
+                    defaultValue={dataInicio}
+                    className="rounded border px-2 py-2"
+                  />
                 </label>
 
                 <label className="text-sm text-ink/80">
                   <span className="mb-1 block font-medium text-ink">Vencimento fim</span>
-                  <input type="date" name="data_fim" defaultValue={dataFim} className="rounded border px-2 py-2" />
+                  <input
+                    type="date"
+                    name="data_fim"
+                    defaultValue={dataFim}
+                    className="rounded border px-2 py-2"
+                  />
                 </label>
 
-                <button type="submit" className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                <button
+                  type="submit"
+                  className="rounded bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700"
+                >
                   Filtrar
                 </button>
 
-                <Link href={buildStatusHref(statusFilter, { clienteId: "todos", inicio: "", fim: "" })} className="rounded border px-3 py-2 text-sm text-ink/70 hover:bg-slate-50">
+                <Link
+                  href={buildStatusHref(statusFilter, {
+                    clienteId: "todos",
+                    inicio: "",
+                    fim: "",
+                  })}
+                  className="rounded border px-3 py-2 text-sm text-ink/70 hover:bg-slate-50"
+                >
                   Limpar
                 </Link>
               </div>
@@ -227,15 +297,37 @@ export default async function PagamentosPage({
                     inicio: dataInicio,
                     fim: dataFim,
                   })}
-                  className={`rounded-full px-3 py-1.5 text-sm ${statusFilter === option.value ? "bg-brand-600 text-white" : "bg-white text-ink/70 ring-1 ring-brand-200"}`}
+                  className={`rounded-full px-3 py-1.5 text-sm ${
+                    statusFilter === option.value
+                      ? "bg-brand-600 text-white"
+                      : "bg-white text-ink/70 ring-1 ring-brand-200"
+                  }`}
                 >
                   {option.label}
                 </Link>
               ))}
             </div>
 
+            {/* Card com o indicador da somatória dos itens filtrados */}
+            <div className="mb-4 flex items-center justify-between rounded border bg-white p-4 shadow-sm">
+              <div>
+                <span className="text-xs font-medium uppercase tracking-wider text-ink/60">
+                  Total exibido
+                </span>
+                <div className="text-2xl font-bold text-brand-700">
+                  {formatMoney(totalFiltrado)}
+                </div>
+              </div>
+              <div className="text-right text-sm text-ink/70">
+                <span className="font-semibold text-ink">{filteredPagamentos.length}</span>{" "}
+                {filteredPagamentos.length === 1 ? "registro" : "registros"}
+              </div>
+            </div>
+
             {pagError ? (
-              <p className="text-sm text-red-600">Erro ao buscar pagamentos: {pagError.message}</p>
+              <p className="text-sm text-red-600">
+                Erro ao buscar pagamentos: {pagError.message}
+              </p>
             ) : filteredPagamentos.length === 0 ? (
               <p className="p-6">Nenhum pagamento encontrado.</p>
             ) : (
@@ -244,14 +336,34 @@ export default async function PagamentosPage({
                   <div key={p.id} className="rounded border p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="font-medium">{p.cliente?.nome ?? "Cliente sem vínculo"} — {formatForma(p.forma)} — {formatStatus(p.status)}</div>
-                        <div className="text-sm text-ink/60">Pago: {p.data_pagamento ? new Date(p.data_pagamento).toLocaleDateString("pt-BR") : "-"}</div>
-                        <div className="text-sm text-ink/60">Venc.: {p.data_vencimento ? new Date(p.data_vencimento).toLocaleDateString("pt-BR") : "-"}</div>
+                        <div className="font-medium">
+                          {p.cliente?.nome ?? "Cliente sem vínculo"} — {formatForma(p.forma)} —{" "}
+                          {formatStatus(p.status)}
+                        </div>
+                        <div className="text-sm text-ink/60">
+                          Pago:{" "}
+                          {p.data_pagamento
+                            ? new Date(p.data_pagamento).toLocaleDateString("pt-BR")
+                            : "-"}
+                        </div>
+                        <div className="text-sm text-ink/60">
+                          Venc.:{" "}
+                          {p.data_vencimento
+                            ? new Date(p.data_vencimento).toLocaleDateString("pt-BR")
+                            : "-"}
+                        </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-semibold">R$ {Number(p.valor ?? 0).toFixed(2)}</div>
+                        <div className="font-semibold">
+                          R$ {Number(p.valor ?? 0).toFixed(2)}
+                        </div>
                         <div className="text-sm text-ink/60">
-                          <a href={p.venda_id ? `/vendas/${p.venda_id}/detalhes` : "#"} className="text-brand-600 hover:underline">
+                          <a
+                            href={
+                              p.venda_id ? `/vendas/${p.venda_id}/detalhes` : "#"
+                            }
+                            className="text-brand-600 hover:underline"
+                          >
                             Venda: {p.venda_id ?? "—"}
                           </a>
                         </div>
@@ -259,10 +371,15 @@ export default async function PagamentosPage({
                     </div>
 
                     <div className="mt-3 flex items-center justify-between">
-                      <div className="text-sm text-ink/60">Parcelas: {p.parcelas ?? 1}</div>
+                      <div className="text-sm text-ink/60">
+                        Parcelas: {p.parcelas ?? 1}
+                      </div>
                       <div className="flex items-center gap-2">
                         {p.venda_id && (
-                          <a href={`/vendas/${p.venda_id}/detalhes`} className="text-sm text-brand-600">
+                          <a
+                            href={`/vendas/${p.venda_id}/detalhes`}
+                            className="text-sm text-brand-600"
+                          >
                             Ver venda
                           </a>
                         )}
