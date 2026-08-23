@@ -228,6 +228,34 @@ create trigger trg_pagamentos_updated_at
   for each row execute function set_updated_at();
 
 -- ============================================================================
+-- TABELA: pagamento_parcelas
+-- (parcelas individuais para pagamentos de clientes)
+-- ============================================================================
+
+create table pagamento_parcelas (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+
+  pagamento_id uuid not null references pagamentos(id) on delete cascade,
+  numero integer not null check (numero >= 1),
+  valor numeric(10,2) not null check (valor > 0),
+  data_vencimento date,
+  data_pagamento timestamptz,
+  status status_pagamento not null default 'pendente',
+
+  created_at timestamptz not null default now()
+);
+
+create index idx_pagamento_parcelas_owner on pagamento_parcelas(owner_id);
+create index idx_pagamento_parcelas_pagamento on pagamento_parcelas(pagamento_id);
+create index idx_pagamento_parcelas_status on pagamento_parcelas(status);
+
+create trigger trg_pagamento_parcelas_updated_at
+  before update on pagamento_parcelas
+  for each row execute function set_updated_at();
+
+
+-- ============================================================================
 -- TABELA: boletos
 -- (compras para reposicao de estoque, com controle financeiro)
 -- ============================================================================
@@ -476,6 +504,7 @@ alter table pagamentos   enable row level security;
 alter table boletos      enable row level security;
 alter table boleto_itens enable row level security;
 alter table estoque_movimentos enable row level security;
+alter table pagamento_parcelas enable row level security;
 
 -- Política genérica reaplicada por tabela: dono só mexe no que é seu.
 create policy "categorias_owner_all" on categorias
@@ -503,6 +532,9 @@ create policy "boleto_itens_owner_all" on boleto_itens
   for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 create policy "estoque_movimentos_owner_all" on estoque_movimentos
+  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+create policy "pagamento_parcelas_owner_all" on pagamento_parcelas
   for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 
 -- ============================================================================
