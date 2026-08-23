@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 type Item = {
@@ -18,6 +18,130 @@ type PagamentoConfig = {
   data_vencimento: string | null;
   observacoes: string | null;
 };
+
+type Option = {
+  value: string;
+  label: string;
+  sublabel?: string;
+};
+
+// Componente reutilizável de Select com Busca (Combobox)
+function SearchableSelect({
+  options,
+  value,
+  onChange,
+  placeholder,
+  clearable = false,
+  resetOnSelect = false,
+}: {
+  options: Option[];
+  value?: string | null;
+  onChange: (val: string) => void;
+  placeholder: string;
+  clearable?: boolean;
+  resetOnSelect?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = options.find((opt) => opt.value === value);
+
+  // Sincroniza o texto do campo com a opção selecionada
+  useEffect(() => {
+    if (!isOpen) {
+      if (resetOnSelect) {
+        setSearchTerm("");
+      } else {
+        setSearchTerm(selectedOption ? selectedOption.label : "");
+      }
+    }
+  }, [selectedOption, isOpen, resetOnSelect]);
+
+  // Fecha o dropdown ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = options.filter(
+    (opt) =>
+      opt.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (opt.sublabel && opt.sublabel.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <div className="relative">
+        <input
+          type="text"
+          className="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
+          placeholder={placeholder}
+          value={searchTerm}
+          onFocus={() => {
+            setIsOpen(true);
+            if (!resetOnSelect && selectedOption) {
+              setSearchTerm("");
+            }
+          }}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setIsOpen(true);
+          }}
+        />
+        {clearable && value && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange("");
+              setSearchTerm("");
+              setIsOpen(false);
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 px-1 text-xs text-slate-400 hover:text-slate-600"
+            title="Limpar seleção"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded border border-slate-200 bg-white shadow-lg">
+          {filteredOptions.length === 0 ? (
+            <div className="p-3 text-xs text-slate-500">Nenhum resultado encontrado</div>
+          ) : (
+            filteredOptions.map((opt) => (
+              <div
+                key={opt.value}
+                onClick={() => {
+                  onChange(opt.value);
+                  if (resetOnSelect) {
+                    setSearchTerm("");
+                  } else {
+                    setSearchTerm(opt.label);
+                  }
+                  setIsOpen(false);
+                }}
+                className={`cursor-pointer px-3 py-2 text-sm hover:bg-slate-100 ${
+                  opt.value === value ? "bg-slate-50 font-medium text-brand-600" : "text-slate-800"
+                }`}
+              >
+                <div>{opt.label}</div>
+                {opt.sublabel && <div className="text-xs text-slate-400">{opt.sublabel}</div>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function addMonths(dateString: string | null, months: number) {
   if (!dateString) return null;
@@ -194,7 +318,6 @@ export function VendaForm({ venda }: { venda?: any }) {
         throw new Error("Informe a data de vencimento para o pagamento parcelado/fiado.");
       }
 
-      // Converte quantidades e preços para tipos numéricos puros antes do envio
       const vendaItensFormatados = form.venda_itens.map((it: Item) => ({
         ...it,
         quantidade: parseDecimal(it.quantidade),
@@ -257,22 +380,20 @@ export function VendaForm({ venda }: { venda?: any }) {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <label className="space-y-1 text-sm text-ink/80 md:col-span-2">
           <span className="font-medium text-ink">Cliente (opcional)</span>
-          <select
-            value={form.cliente_id ?? ""}
-            onChange={(e) => setForm({ ...form, cliente_id: e.target.value || null })}
-            className="w-full rounded border px-2 py-2"
-          >
-            <option value="">-- Sem cliente --</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nome}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            placeholder="Buscar cliente pelo nome..."
+            clearable
+            value={form.cliente_id}
+            onChange={(val) => setForm({ ...form, cliente_id: val || null })}
+            options={clients.map((c) => ({
+              value: c.id,
+              label: c.nome,
+            }))}
+          />
         </label>
 
         <label className="space-y-1 text-sm text-ink/80">
-          <span className="font-medium text-ink">Desconto</span>
+          <span className="font-medium text-ink">Desconto (R$)</span>
           <input
             type="text"
             inputMode="decimal"
@@ -283,36 +404,35 @@ export function VendaForm({ venda }: { venda?: any }) {
                 setForm({ ...form, desconto: val });
               }
             }}
-            className="w-full rounded border px-2 py-2"
+            className="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
           />
         </label>
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <select
-            className="rounded border px-2 py-2"
-            value=""
-            onChange={(e) => {
-              if (e.target.value) addItemFromProduct(e.target.value);
+        <div className="space-y-1">
+          <span className="text-sm font-medium text-ink">Adicionar Produto</span>
+          <SearchableSelect
+            placeholder="Buscar produto por nome ou preço..."
+            resetOnSelect
+            onChange={(prodId) => {
+              if (prodId) addItemFromProduct(prodId);
             }}
-          >
-            <option value="">Adicionar produto...</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nome} — R$ {p.preco_venda}
-              </option>
-            ))}
-          </select>
+            options={products.map((p) => ({
+              value: p.id,
+              label: p.nome,
+              sublabel: `R$ ${p.preco_venda}`,
+            }))}
+          />
         </div>
 
         {form.venda_itens.length === 0 && (
-          <div className="text-sm text-ink/60">Nenhum item adicionado.</div>
+          <div className="py-2 text-sm text-ink/60">Nenhum item adicionado.</div>
         )}
 
         <div className="space-y-2">
           {form.venda_itens.map((it: Item, i: number) => (
-            <div key={i} className="flex items-center gap-2">
+            <div key={i} className="flex items-center gap-2 rounded border bg-slate-50/50 p-2">
               <div className="flex-1">
                 <div className="text-sm font-medium">{it.produto_nome}</div>
               </div>
@@ -321,7 +441,7 @@ export function VendaForm({ venda }: { venda?: any }) {
                 <input
                   type="text"
                   inputMode="numeric"
-                  className="w-16 rounded border px-2 py-1 text-sm"
+                  className="w-16 rounded border bg-white px-2 py-1 text-sm"
                   value={String(it.quantidade)}
                   onChange={(e) => {
                     const val = e.target.value.replace(/\D/g, "");
@@ -335,7 +455,7 @@ export function VendaForm({ venda }: { venda?: any }) {
                   type="text"
                   inputMode="decimal"
                   placeholder="0,00"
-                  className="w-24 rounded border px-2 py-1 text-sm"
+                  className="w-24 rounded border bg-white px-2 py-1 text-sm"
                   value={String(it.preco_unitario)}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -370,7 +490,7 @@ export function VendaForm({ venda }: { venda?: any }) {
                   pagamento: { ...form.pagamento, forma: e.target.value },
                 })
               }
-              className="w-full rounded border px-2 py-2"
+              className="w-full rounded border px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             >
               <option value="dinheiro">Dinheiro</option>
               <option value="pix">Pix</option>
@@ -395,7 +515,7 @@ export function VendaForm({ venda }: { venda?: any }) {
                   pagamento: { ...form.pagamento, parcelas: val },
                 });
               }}
-              className="w-full rounded border px-2 py-2"
+              className="w-full rounded border px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </label>
 
@@ -410,7 +530,7 @@ export function VendaForm({ venda }: { venda?: any }) {
                   pagamento: { ...form.pagamento, data_vencimento: e.target.value || null },
                 })
               }
-              className="w-full rounded border px-2 py-2"
+              className="w-full rounded border px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </label>
 
@@ -433,7 +553,7 @@ export function VendaForm({ venda }: { venda?: any }) {
                   });
                 }
               }}
-              className="w-full rounded border px-2 py-2"
+              className="w-full rounded border px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
             />
           </label>
         </div>
