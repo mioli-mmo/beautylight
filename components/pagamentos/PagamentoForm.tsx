@@ -22,11 +22,13 @@ function buildParcelasBase(total: number, parcelas: number, dataBase: string | n
   const totalValue = Number(total) || 0;
   if (totalValue <= 0) return [];
 
-  const valorPorParcela = totalValue / count;
+  const valorPorParcela = Math.floor((totalValue / count) * 100) / 100;
+  const resto = Number((totalValue - valorPorParcela * count).toFixed(2));
+
   return Array.from({ length: count }, (_, index) => ({
     id: undefined,
     numero: index + 1,
-    valor: index === count - 1 ? Number((totalValue - valorPorParcela * (count - 1)).toFixed(2)) : Number(valorPorParcela.toFixed(2)),
+    valor: index === count - 1 ? Number((valorPorParcela + resto).toFixed(2)) : valorPorParcela,
     data_vencimento: dataBase ? addMonths(dataBase, index) : null,
     status: "pendente",
   }));
@@ -118,6 +120,7 @@ export function PagamentoForm({ pagamento }: { pagamento?: any }) {
 
     try {
       const payload = {
+        id: form.id ?? undefined,
         venda_id: form.venda_id ?? null,
         forma: form.forma,
         status: form.status,
@@ -126,39 +129,32 @@ export function PagamentoForm({ pagamento }: { pagamento?: any }) {
         data_pagamento: form.data_pagamento ?? null,
         data_vencimento: form.data_vencimento ?? null,
         observacoes: form.observacoes ?? null,
-        parcelas_detalhes: Array.isArray(form.parcelasDetalhes) ? form.parcelasDetalhes : [],
       };
 
-      if (form.id) {
-        await fetch(`/api/pagamentos/${form.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        router.push("/pagamentos");
-        return;
-      }
-
+      // Chama a mesma rota /api/pagamentos via PUT se existir ID, ou POST se for novo
       await fetch(`/api/pagamentos`, {
-        method: "POST",
+        method: form.id ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      router.refresh();
-      setForm({
-        id: undefined,
-        venda_id: null,
-        forma: "dinheiro",
-        status: "pendente",
-        valor: 0,
-        parcelas: 1,
-        data_pagamento: null,
-        data_vencimento: null,
-        observacoes: null,
-        parcelasDetalhes: [],
-      });
+      if (form.id) {
+        router.push("/pagamentos");
+      } else {
+        router.refresh();
+        setForm({
+          id: undefined,
+          venda_id: null,
+          forma: "dinheiro",
+          status: "pendente",
+          valor: 0,
+          parcelas: 1,
+          data_pagamento: null,
+          data_vencimento: null,
+          observacoes: null,
+          parcelasDetalhes: [],
+        });
+      }
     } finally {
       setSaving(false);
     }

@@ -28,3 +28,6 @@ pnpm-debug.log*
 
 # supabase
 .supabase/
+
+# anotações
+REFINAMENTO.md
