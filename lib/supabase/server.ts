@@ -1,0 +1,34 @@
+// Cliente Supabase para uso em Server Components / Server Actions / Route Handlers.
+// TODO: instalar dependência -> npm install @supabase/ssr @supabase/supabase-js
+
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import type { Database } from "@/types/database.types";
+
+export async function createClient() {
+  const cookieStore = await cookies();
+
+  return createServerClient<any>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }>) {
+          // TODO: em Server Components isso pode falhar silenciosamente
+          // (esperado) — só funciona de fato em Server Actions/Route Handlers
+          // ou com middleware de refresh de sessão.
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // ignorar — ver TODO acima
+          }
+        },
+      },
+    }
+  );
+}
