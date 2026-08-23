@@ -3,116 +3,71 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-function formatDateForInput(value: string | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
+function formatDateForInput(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  return typeof dateStr === "string" && dateStr.length >= 10
+    ? dateStr.slice(0, 10)
+    : "";
 }
 
-function addMonths(dateValue: string | null, months: number) {
-  if (!dateValue) return null;
-  const date = new Date(`${dateValue}T12:00:00`);
-  date.setMonth(date.getMonth() + months);
-  return date.toISOString();
+function filterInteger(value: string): string {
+  return value.replace(/\D/g, "");
 }
 
-function buildParcelasBase(total: number, parcelas: number, dataBase: string | null) {
-  const count = Math.max(1, Number(parcelas) || 1);
-  const totalValue = Number(total) || 0;
-  if (totalValue <= 0) return [];
-
-  const valorPorParcela = Math.floor((totalValue / count) * 100) / 100;
-  const resto = Number((totalValue - valorPorParcela * count).toFixed(2));
-
-  return Array.from({ length: count }, (_, index) => ({
-    id: undefined,
-    numero: index + 1,
-    valor: index === count - 1 ? Number((valorPorParcela + resto).toFixed(2)) : valorPorParcela,
-    data_vencimento: dataBase ? addMonths(dataBase, index) : null,
-    status: "pendente",
-  }));
+function filterDecimal(value: string): string {
+  const cleaned = value.replace(",", ".").replace(/[^0-9.]/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length > 2) {
+    return parts[0] + "." + parts.slice(1).join("");
+  }
+  return cleaned;
 }
 
 export function PagamentoForm({ pagamento }: { pagamento?: any }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
-  const [vendas, setVendas] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
 
-  const [form, setForm] = useState<any>({
-    id: undefined,
-    venda_id: null,
+  const [form, setForm] = useState({
+    id: undefined as string | undefined,
+    cliente_id: "",
     forma: "dinheiro",
-    status: "pendente",
-    valor: 0,
-    parcelas: 1,
-    data_pagamento: null,
-    data_vencimento: null,
-    observacoes: null,
-    parcelasDetalhes: [] as Array<any>,
+    valor: "",
+    parcelas: "",
+    data_vencimento: "",
+    data_pagamento: "",
+    observacoes: "",
   });
 
+  // Carrega lista de clientes
   useEffect(() => {
-    fetch("/api/vendas")
+    fetch("/api/clientes")
       .then((r) => r.json())
-      .then(setVendas)
-      .catch(() => setVendas([]));
+      .then((data) => setClients(Array.isArray(data) ? data : []))
+      .catch(() => setClients([]));
   }, []);
 
+  // Preenche o formulário buscando o cliente de qualquer uma das origens
   useEffect(() => {
     if (pagamento) {
-      const parcelasDetalhes = (pagamento.pagamento_parcelas ?? []).map((parcela: any, index: number) => ({
-        id: parcela.id,
-        numero: parcela.numero ?? index + 1,
-        valor: Number(parcela.valor ?? 0),
-        data_vencimento: formatDateForInput(parcela.data_vencimento),
-        status: parcela.status ?? "pendente",
-      }));
+      const idCliente =
+        pagamento.cliente_id ??
+        pagamento.vendas?.cliente_id ??
+        pagamento.clientes?.id ??
+        "";
 
-      setForm((f: any) => ({
-        ...f,
-        ...(pagamento as any),
-        parcelas: Number(pagamento.parcelas ?? parcelasDetalhes.length ?? 1),
-        data_pagamento: formatDateForInput(pagamento.data_pagamento),
+      setForm({
+        id: pagamento.id,
+        cliente_id: idCliente ? String(idCliente).trim() : "",
+        forma: pagamento.forma ?? "dinheiro",
+        valor: pagamento.valor ? String(pagamento.valor) : "",
+        parcelas: pagamento.parcelas ? String(pagamento.parcelas) : "",
         data_vencimento: formatDateForInput(pagamento.data_vencimento),
-        parcelasDetalhes,
-      }));
-      return;
-    }
-
-    if (["fiado", "credito_parcelado"].includes(form.forma)) {
-      const nextParcelas = buildParcelasBase(Number(form.valor) || 0, Number(form.parcelas) || 1, form.data_vencimento);
-      setForm((f: any) => ({ ...f, parcelasDetalhes: nextParcelas }));
-    } else {
-      setForm((f: any) => ({ ...f, parcelasDetalhes: [] }));
+        data_pagamento: formatDateForInput(pagamento.data_pagamento),
+        observacoes: pagamento.observacoes ?? "",
+      });
     }
   }, [pagamento]);
-
-  useEffect(() => {
-    if (pagamento) return;
-    if (["fiado", "credito_parcelado"].includes(form.forma)) {
-      setForm((f: any) => ({
-        ...f,
-        parcelasDetalhes: buildParcelasBase(Number(f.valor) || 0, Number(f.parcelas) || 1, f.data_vencimento),
-      }));
-    } else {
-      setForm((f: any) => ({ ...f, parcelasDetalhes: [] }));
-    }
-  }, [form.forma, form.valor, form.parcelas, form.data_vencimento, pagamento]);
-
-  const parseDecimal = (value: string) => {
-    if (value === null || value === undefined || value === "") return 0;
-    return Number(String(value).replace(",", ".")) || 0;
-  };
-
-  function updateParcela(index: number, field: "valor" | "data_vencimento", value: any) {
-    setForm((f: any) => ({
-      ...f,
-      parcelasDetalhes: (f.parcelasDetalhes ?? []).map((parcela: any, parcelaIndex: number) =>
-        parcelaIndex === index ? { ...parcela, [field]: field === "valor" ? Number(value ?? 0) : value } : parcela
-      ),
-    }));
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -120,70 +75,63 @@ export function PagamentoForm({ pagamento }: { pagamento?: any }) {
 
     try {
       const payload = {
-        id: form.id ?? undefined,
-        venda_id: form.venda_id ?? null,
+        cliente_id: form.cliente_id || null,
         forma: form.forma,
-        status: form.status,
-        valor: Number(form.valor) ?? 0,
-        parcelas: Number(form.parcelas) ?? 1,
-        data_pagamento: form.data_pagamento ?? null,
-        data_vencimento: form.data_vencimento ?? null,
-        observacoes: form.observacoes ?? null,
+        valor: Number(form.valor) || 0,
+        parcelas: Number(form.parcelas) || 1,
+        data_vencimento: form.data_vencimento || null,
+        data_pagamento: form.data_pagamento || null,
+        observacoes: form.observacoes || null,
       };
 
-      // Chama a mesma rota /api/pagamentos via PUT se existir ID, ou POST se for novo
-      await fetch(`/api/pagamentos`, {
-        method: form.id ? "PUT" : "POST",
+      const url = form.id ? `/api/pagamentos/${form.id}` : "/api/pagamentos";
+      const method = form.id ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      if (form.id) {
-        router.push("/pagamentos");
-      } else {
-        router.refresh();
-        setForm({
-          id: undefined,
-          venda_id: null,
-          forma: "dinheiro",
-          status: "pendente",
-          valor: 0,
-          parcelas: 1,
-          data_pagamento: null,
-          data_vencimento: null,
-          observacoes: null,
-          parcelasDetalhes: [],
-        });
+      if (!res.ok) {
+        throw new Error("Falha ao salvar pagamento.");
       }
+
+      router.refresh();
+      router.push("/pagamentos");
+    } catch (error: any) {
+      window.alert(error?.message ?? "Erro ao salvar pagamento.");
     } finally {
       setSaving(false);
     }
   }
 
-  const renderParcelasEditor = !pagamento && ["fiado", "credito_parcelado"].includes(form.forma);
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <label className="space-y-1 text-sm text-ink/80 md:col-span-2">
-          <span className="font-medium text-ink">Venda (opcional)</span>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Cliente</span>
           <select
-            value={form.venda_id ?? ""}
-            onChange={(e) => setForm({ ...form, venda_id: e.target.value || null })}
-            className="w-full rounded border px-2 py-2"
+            value={String(form.cliente_id ?? "").trim()}
+            onChange={(e) => setForm({ ...form, cliente_id: e.target.value })}
+            className="w-full rounded border p-2"
           >
-            <option value="">-- Sem venda --</option>
-            {vendas.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.cliente_id ?? v.id} — R$ {Number(v.valor_total ?? 0).toFixed(2)}
+            <option value="">-- Selecione um cliente --</option>
+            {clients.map((c) => (
+              <option key={c.id} value={String(c.id).trim()}>
+                {c.nome}
               </option>
             ))}
           </select>
         </label>
 
-        <label className="space-y-1 text-sm text-ink/80">
-          <span className="font-medium text-ink">Forma</span>
-          <select value={form.forma} onChange={(e) => setForm({ ...form, forma: e.target.value })} className="w-full rounded border px-2 py-2">
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Forma de Pagamento</span>
+          <select
+            value={form.forma}
+            onChange={(e) => setForm({ ...form, forma: e.target.value })}
+            className="w-full rounded border p-2"
+          >
             <option value="dinheiro">Dinheiro</option>
             <option value="pix">Pix</option>
             <option value="debito">Débito</option>
@@ -193,92 +141,70 @@ export function PagamentoForm({ pagamento }: { pagamento?: any }) {
           </select>
         </label>
 
-        <label className="space-y-1 text-sm text-ink/80">
-          <span className="font-medium text-ink">Status</span>
-          <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded border px-2 py-2">
-            <option value="pendente">Pendente</option>
-            <option value="pago">Pago</option>
-            <option value="cancelado">Cancelado</option>
-          </select>
-        </label>
-
-        <label className="space-y-1 text-sm text-ink/80">
-          <span className="font-medium text-ink">Valor</span>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Valor (R$)</span>
           <input
             type="text"
             inputMode="decimal"
-            pattern="[0-9]*[.,]?[0-9]*"
-            value={String(form.valor ?? 0)}
-            onChange={(e) => setForm({ ...form, valor: parseDecimal(e.target.value) })}
-            className="w-full rounded border px-2 py-2"
+            placeholder="0.00"
+            value={form.valor}
+            onChange={(e) => setForm({ ...form, valor: filterDecimal(e.target.value) })}
+            className="w-full rounded border p-2"
           />
         </label>
 
-        <label className="space-y-1 text-sm text-ink/80">
-          <span className="font-medium text-ink">Parcelas</span>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Parcelas</span>
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
+            placeholder="1"
             value={form.parcelas}
-            onChange={(e) => setForm({ ...form, parcelas: Math.max(1, Number(e.target.value) || 1) })}
-            className="w-full rounded border px-2 py-2"
+            onChange={(e) => setForm({ ...form, parcelas: filterInteger(e.target.value) })}
+            className="w-full rounded border p-2"
           />
         </label>
 
-        <label className="space-y-1 text-sm text-ink/80">
-          <span className="font-medium text-ink">Data do pagamento</span>
-          <input type="date" value={form.data_pagamento ?? ""} onChange={(e) => setForm({ ...form, data_pagamento: e.target.value || null })} className="w-full rounded border px-2 py-2" />
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Data de Vencimento</span>
+          <input
+            type="date"
+            value={form.data_vencimento}
+            onChange={(e) => setForm({ ...form, data_vencimento: e.target.value })}
+            className="w-full rounded border p-2"
+          />
         </label>
 
-        <label className="space-y-1 text-sm text-ink/80">
-          <span className="font-medium text-ink">Data de vencimento</span>
-          <input type="date" value={form.data_vencimento ?? ""} onChange={(e) => setForm({ ...form, data_vencimento: e.target.value || null })} className="w-full rounded border px-2 py-2" />
-        </label>
-
-        <label className="space-y-1 text-sm text-ink/80 md:col-span-2">
-          <span className="font-medium text-ink">Observações</span>
-          <input value={form.observacoes ?? ""} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} className="w-full rounded border px-2 py-2" />
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">Data de Pagamento</span>
+          <input
+            type="date"
+            value={form.data_pagamento}
+            onChange={(e) => setForm({ ...form, data_pagamento: e.target.value })}
+            className="w-full rounded border p-2"
+          />
         </label>
       </div>
 
-      {renderParcelasEditor && (
-        <div className="rounded border bg-brand-50 p-3">
-          <div className="mb-2 text-sm font-medium text-brand-700">Parcelas do pagamento</div>
-          <div className="space-y-3">
-            {(form.parcelasDetalhes ?? []).map((parcela: any, index: number) => (
-              <div key={parcela.id ?? `parcela-${index}`} className="grid grid-cols-1 gap-2 rounded border bg-white p-3 md:grid-cols-3">
-                <div className="text-sm font-medium text-ink/80">Parcela {index + 1}</div>
+      <label className="block space-y-1 text-sm">
+        <span className="font-medium">Observações</span>
+        <textarea
+          rows={3}
+          value={form.observacoes}
+          onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
+          className="w-full rounded border p-2"
+        />
+      </label>
 
-                <label className="text-sm text-ink/80">
-                  <span className="mb-1 block">Valor</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={String(parcela.valor ?? 0)}
-                    onChange={(e) => updateParcela(index, "valor", parseDecimal(e.target.value))}
-                    className="w-full rounded border px-2 py-2"
-                  />
-                </label>
-
-                <label className="text-sm text-ink/80">
-                  <span className="mb-1 block">Vencimento</span>
-                  <input
-                    type="date"
-                    value={parcela.data_vencimento ?? ""}
-                    onChange={(e) => updateParcela(index, "data_vencimento", e.target.value || null)}
-                    className="w-full rounded border px-2 py-2"
-                  />
-                </label>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60">
-          {saving ? "Salvando..." : form.id ? "Salvar" : "Criar"}
-        </button>
-      </div>
+      <button
+        type="submit"
+        disabled={saving}
+        className="rounded bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+      >
+        {saving ? "Salvando..." : form.id ? "Salvar alterações" : "Criar pagamento"}
+      </button>
     </form>
   );
 }
+
+export default PagamentoForm;

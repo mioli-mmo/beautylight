@@ -6,6 +6,26 @@ import { PagamentoParcelasEditor } from "@/components/pagamentos/PagamentoParcel
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+function safeParseDate(value: string | null | undefined): Date {
+  if (!value) return new Date();
+
+  const dateStr =
+    typeof value === "string" && value.length === 10 && !value.includes("T")
+      ? `${value}T00:00:00`
+      : value;
+
+  const date = new Date(dateStr);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function safeDateToYMD(date: Date): string {
+  const d = Number.isNaN(date.getTime()) ? new Date() : date;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default async function PagamentoEditPage({
   params,
 }: {
@@ -15,7 +35,7 @@ export default async function PagamentoEditPage({
   const id = resolvedParams.id;
   const supabase = await createClient();
 
-  // 1. Busca o pagamento principal
+  // 1. Busca o pagamento principal (sem joins arriscados que causam erro de FK)
   const { data: pagamento, error } = await supabase
     .from("pagamentos")
     .select("*, pagamento_parcelas(*)")
@@ -33,7 +53,22 @@ export default async function PagamentoEditPage({
     );
   }
 
-  // 2. Tenta recuperar parcelas existentes
+  // 2. Se não houver cliente_id no pagamento mas houver venda_id, busca o cliente na venda
+  let clienteId = pagamento.cliente_id ?? null;
+
+  if (!clienteId && pagamento.venda_id) {
+    const { data: venda } = await supabase
+      .from("vendas")
+      .select("cliente_id")
+      .eq("id", pagamento.venda_id)
+      .maybeSingle();
+
+    if (venda?.cliente_id) {
+      clienteId = venda.cliente_id;
+    }
+  }
+
+  // 3. Tenta recuperar parcelas existentes
   let parcelas = pagamento.pagamento_parcelas ?? [];
 
   if (!Array.isArray(parcelas) || parcelas.length === 0) {
@@ -48,7 +83,7 @@ export default async function PagamentoEditPage({
     }
   }
 
-  // 3. AUTO-GERAÇÃO: Se for fiado/parcelado e a tabela pagamento_parcelas estiver vazia
+  // 4. AUTO-GERAÇÃO: Se for fiado/parcelado e a tabela pagamento_parcelas estiver vazia
   if (
     (!parcelas || parcelas.length === 0) &&
     (pagamento.forma === "fiado" || (pagamento.parcelas && pagamento.parcelas > 0))
@@ -58,9 +93,7 @@ export default async function PagamentoEditPage({
     const valorBase = Math.floor((valorTotal / qtdParcelas) * 100) / 100;
     const resto = Number((valorTotal - valorBase * qtdParcelas).toFixed(2));
 
-    const dataInicial = pagamento.data_vencimento
-      ? new Date(`${pagamento.data_vencimento}T00:00:00`)
-      : new Date();
+    const dataInicial = safeParseDate(pagamento.data_vencimento);
 
     const novasParcelas = Array.from({ length: qtdParcelas }, (_, index) => {
       const vencimento = new Date(dataInicial);
@@ -70,7 +103,7 @@ export default async function PagamentoEditPage({
         pagamento_id: id,
         numero: index + 1,
         valor: index === qtdParcelas - 1 ? Number((valorBase + resto).toFixed(2)) : valorBase,
-        data_vencimento: vencimento.toISOString().split("T")[0],
+        data_vencimento: safeDateToYMD(vencimento),
         status: "pendente",
       };
     });
@@ -85,13 +118,14 @@ export default async function PagamentoEditPage({
     }
   }
 
-  // 4. Ordena as parcelas para o editor
+  // 5. Ordena parcelas e monta o objeto completo garantindo o cliente_id
   const parcelasOrdenadas = [...parcelas].sort(
     (a: any, b: any) => (a.numero ?? 0) - (b.numero ?? 0)
   );
 
   const pagamentoCompleto = {
     ...pagamento,
+    cliente_id: clienteId,
     pagamento_parcelas: parcelasOrdenadas,
   };
 
